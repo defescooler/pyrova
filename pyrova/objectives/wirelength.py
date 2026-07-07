@@ -26,5 +26,5 @@ def hpwl(design: "Design") -> float:
 
 
 def smooth_hpwl(design: "Design", gamma: float = 1.0) -> float:
-    """TODO: Differentiable log-sum-exp HPWL surrogate. """
+    """Differentiable log-sum-exp HPWL surrogate. Not yet implemented (Phase 3)."""
     raise NotImplementedError("smooth_hpwl() not yet implemented")

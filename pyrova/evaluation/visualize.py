@@ -10,25 +10,11 @@ import matplotlib.pyplot as plt
 from matplotlib import colors
 from matplotlib.patches import Rectangle
 
+from pyrova.core.io import parse_flp
+
 
 def read_flp(path: Path) -> list[dict]:
-    units = []
-    with path.open() as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            name, width, height, leftx, bottomy, *_ = line.split()
-            units.append(
-                {
-                    "name": name,
-                    "width": float(width),
-                    "height": float(height),
-                    "leftx": float(leftx),
-                    "bottomy": float(bottomy),
-                }
-            )
-    return units
+    return parse_flp(str(path))
 
 
 def read_steady(path: Path) -> dict[str, float]:

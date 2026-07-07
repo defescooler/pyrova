@@ -11,7 +11,8 @@ if TYPE_CHECKING:
 def nonoverlap_penalty(cx: np.ndarray, cy: np.ndarray,
                        widths: np.ndarray, heights: np.ndarray,
                        gap: float = 0.0) -> tuple[float, np.ndarray, np.ndarray]:
-    """Soft non-overlap penalty and gradient."""
+    """Sum of pairwise rectangle-overlap areas (plus `gap` margin) and its exact
+    gradient. Returns (penalty, grad_cx, grad_cy) w.r.t. macro centres."""
     n = len(cx)
     pen = 0.0
     gcx = np.zeros(n)

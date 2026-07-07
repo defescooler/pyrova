@@ -5,15 +5,13 @@ from pathlib import Path
 
 import numpy as np
 
+from pyrova.core.io import parse_ptrace
+
 
 def _read_ptrace(path: str):
-    """Return (block_names, data[T,B]); first row is a header if non-numeric."""
-    rows = [ln.split() for ln in open(path) if ln.strip() and not ln.startswith("#")]
-    try:
-        float(rows[0][0])
-        return [f"col{i}" for i in range(len(rows[0]))], np.array(rows, dtype=float)
-    except ValueError:
-        return rows[0], np.array([[float(x) for x in r] for r in rows[1:]])
+    """Return (block_names, data[T,B]) via the shared ``core.io`` parser."""
+    names, rows = parse_ptrace(path)
+    return names, np.asarray(rows, dtype=float)
 
 
 class RealTraceWorkloadModel:
