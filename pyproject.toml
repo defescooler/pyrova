@@ -1,14 +1,16 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyrova"
 version = "0.1.0"
 description = "Risk-aware thermal placement under workload uncertainty"
 requires-python = ">=3.10"
+# Pinned upper bounds: the solver/adjoint numerics were validated against this
+# range (notably NumPy 1.x). Bump deliberately, then re-run `make verify`.
 dependencies = [
-    "numpy>=1.24",
+    "numpy>=1.24,<2.0",
     "scipy>=1.10",
     "matplotlib>=3.7",
 ]
@@ -21,4 +23,5 @@ where = ["."]
 include = ["pyrova*"]
 
 [tool.setuptools.package-data]
-pyrova = ["py.typed"]
+pyrova = ["py.typed", "inputs/**/*"]
+"pyrova.tests" = ["*.npz"]
