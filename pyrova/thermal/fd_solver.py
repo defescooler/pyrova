@@ -1,109 +1,56 @@
-"""Steady-state finite-difference thermal solver for a 4-layer grid
-model (Si/TIM/Spreader/Heatsink) with adjoint gradients."""
+"""Steady-state finite-difference thermal solver for a 4-layer grid model
+(Si / TIM / Spreader / Heatsink) with adjoint gradients.
+
+The solver assembles the same linear conductance system the reference iterative
+grid solver converges to and solves it exactly by LU. ``G`` is symmetric, so the
+adjoint reuses the forward factorisation. The field, peak, and adjoint gradient
+of this module are pinned by ``pyrova.tests.golden``; run ``make verify``
+before and after any change to the numerics.
+"""
 
 from __future__ import annotations
+
 import math
+
 import numpy as np
 from scipy import sparse
 from scipy.sparse.linalg import factorized, spsolve
 
+# Parsing lives in core.io; re-exported here for the historical import path.
+from pyrova.core.io import chip_dimensions, parse_config, parse_flp, parse_ptrace
 
-# ---------------------------------------------------------------------------
-# File parsers
-# ---------------------------------------------------------------------------
+__all__ = [
+    "GridFDSolver", "getr", "random_power_map",
+    "parse_flp", "parse_config", "parse_ptrace", "chip_dimensions",
+    "run_reference_grid", "read_reference_grid_steady", "read_reference_block_steady",
+]
 
-def parse_flp(path: str) -> list[dict]:
-    """Parse a .flp floorplan file. Returns list of unit dicts."""
-    units = []
-    with open(path) as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith('#'):
-                continue
-            parts = line.split()
-            units.append({
-                'name': parts[0],
-                'width': float(parts[1]),
-                'height': float(parts[2]),
-                'leftx': float(parts[3]),
-                'bottomy': float(parts[4]),
-            })
-    return units
-
-
-def parse_ptrace(path: str) -> tuple[list[str], list[list[float]]]:
-    """Parse a .ptrace power-trace file. Returns (block_names, list_of_power_rows)."""
-    with open(path) as f:
-        lines = [ln.strip() for ln in f if ln.strip() and not ln.startswith('#')]
-    block_names = lines[0].split('\t')
-    rows = [[float(v) for v in ln.split('\t')] for ln in lines[1:]]
-    return block_names, rows
-
-
-def parse_config(path: str) -> dict:
-    """Parse a .config file into a dict of {key: value}."""
-    cfg = {}
-    with open(path) as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith('#'):
-                continue
-            # Tokens: -key value  (comments after #)
-            line = line.split('#')[0].strip()
-            if not line:
-                continue
-            parts = line.split()
-            if len(parts) >= 2 and parts[0].startswith('-'):
-                key = parts[0][1:]
-                try:
-                    val = float(parts[1])
-                except ValueError:
-                    val = parts[1]
-                cfg[key] = val
-    return cfg
-
-
-# ---------------------------------------------------------------------------
-# Utility
-# ---------------------------------------------------------------------------
 
 def getr(k: float, length: float, area: float) -> float:
     """Thermal resistance R = length / (k * area)."""
     return length / (k * area)
 
 
-def chip_dimensions(units: list[dict]) -> tuple[float, float]:
-    """Infer chip W and H from the flp bounding box."""
-    max_x = max(u['leftx'] + u['width'] for u in units)
-    max_y = max(u['bottomy'] + u['height'] for u in units)
-    min_x = min(u['leftx'] for u in units)
-    min_y = min(u['bottomy'] for u in units)
-    return max_x - min_x, max_y - min_y
-
-
-# ---------------------------------------------------------------------------
-# Package-node index constants
-# ---------------------------------------------------------------------------
+# Package peripheral node indices (offsets past the grid nodes).
 SP_W, SP_E, SP_N, SP_S = 0, 1, 2, 3
 SINK_C_W, SINK_C_E, SINK_C_N, SINK_C_S = 4, 5, 6, 7
 SINK_W, SINK_E, SINK_N, SINK_S = 8, 9, 10, 11
 EXTRA = 12
 
+# Per-direction bookkeeping: which package nodes, which axis, whether the shared
+# edge runs along rows (y) or columns (x). Drives the package-node assembly.
+_DIRS = ("N", "S", "W", "E")
+_AXIS = {"N": "y", "S": "y", "W": "x", "E": "x"}
+_SP = {"W": SP_W, "E": SP_E, "N": SP_N, "S": SP_S}
+_SINK_C = {"W": SINK_C_W, "E": SINK_C_E, "N": SINK_C_N, "S": SINK_C_S}
+_SINK = {"W": SINK_W, "E": SINK_E, "N": SINK_N, "S": SINK_S}
 
-# ---------------------------------------------------------------------------
-# Core solver
-# ---------------------------------------------------------------------------
 
 class GridFDSolver:
-    """
-    4-layer grid model (Si/TIM/Spreader/Heatsink) with a 5-point
-    conductance stencil and 12 package peripheral nodes.
+    """4-layer grid model with a 5-point conductance stencil and 12 package nodes.
 
-    Layers (low->high):
-      0 = Silicon    (power-dissipating)
-      1 = TIM        (interface material)
-      2 = Spreader
-      3 = Heatsink   (convective BC to ambient)
+    Layers (low -> high): 0 = Silicon (power-dissipating), 1 = TIM, 2 = Spreader,
+    3 = Heatsink (convective BC to ambient).
     """
 
     SI, TIM, SP, HS = 0, 1, 2, 3
@@ -120,10 +67,8 @@ class GridFDSolver:
         self.N_grid = self.nl * nr * nc
         self.N = self.N_grid + EXTRA
 
-        cw = chip_w / nc
-        ch = chip_h / nr
-        self.cw = cw
-        self.ch = ch
+        self.cw = chip_w / nc
+        self.ch = chip_h / nr
 
         self._init_layer_params()
         self._init_package_params()
@@ -131,552 +76,424 @@ class GridFDSolver:
         self.G = None
         self._factor = None
 
-    # ------------------------------------------------------------------
+    # Parameter tables
+
     def _init_layer_params(self):
         cfg = self.cfg
         cw, ch = self.cw, self.ch
-        k  = [cfg['k_chip'], cfg['k_interface'], cfg['k_spreader'], cfg['k_sink']]
-        t  = [cfg['t_chip'], cfg['t_interface'], cfg['t_spreader'], cfg['t_sink']]
+        k = [cfg["k_chip"], cfg["k_interface"], cfg["k_spreader"], cfg["k_sink"]]
+        t = [cfg["t_chip"], cfg["t_interface"], cfg["t_spreader"], cfg["t_sink"]]
         self.k_layer = k
         self.t_layer = t
 
-        self.rx = [getr(k[l], cw,  ch  * t[l]) for l in range(4)]
-        self.ry = [getr(k[l], ch,  cw  * t[l]) for l in range(4)]
-        self.rz = [getr(k[l], t[l], cw * ch)   for l in range(4)]
+        self.rx = [getr(k[l], cw, ch * t[l]) for l in range(4)]
+        self.ry = [getr(k[l], ch, cw * t[l]) for l in range(4)]
+        self.rz = [getr(k[l], t[l], cw * ch) for l in range(4)]
+        # Heatsink: add convective resistance per cell.
+        self.rz[self.HS] += cfg["r_convec"] * cfg["s_sink"] ** 2 / (cw * ch)
 
-        # Heatsink: add convective resistance per cell
-        self.rz[self.HS] += (cfg['r_convec'] * cfg['s_sink'] ** 2 / (cw * ch))
-
-    # ------------------------------------------------------------------
     def _init_package_params(self):
         cfg = self.cfg
         W, H = self.chip_w, self.chip_h
-        k_sp = cfg['k_spreader'];  t_sp = cfg['t_spreader'];  s_sp = cfg['s_spreader']
-        k_hs = cfg['k_sink'];      t_hs = cfg['t_sink'];      s_hs = cfg['s_sink']
-        r_cv = cfg['r_convec']
+        k_sp, t_sp, s_sp = cfg["k_spreader"], cfg["t_spreader"], cfg["s_spreader"]
+        k_hs, t_hs, s_hs = cfg["k_sink"], cfg["t_sink"], cfg["s_sink"]
+        r_cv = cfg["r_convec"]
 
-        pk = {}
-        pk['r_sp1_x']   = getr(k_sp, (s_sp - W) / 4, (s_sp + 3*H) / 4 * t_sp)
-        pk['r_sp1_y']   = getr(k_sp, (s_sp - H) / 4, (s_sp + 3*W) / 4 * t_sp)
-        pk['r_hs1_x']   = getr(k_hs, (s_sp - W) / 4, (s_sp + 3*H) / 4 * t_hs)
-        pk['r_hs1_y']   = getr(k_hs, (s_sp - H) / 4, (s_sp + 3*W) / 4 * t_hs)
-        pk['r_hs2_x']   = getr(k_hs, (s_sp - W) / 4, (3*s_sp + H) / 4 * t_hs)
-        pk['r_hs2_y']   = getr(k_hs, (s_sp - H) / 4, (3*s_sp + W) / 4 * t_hs)
-        pk['r_hs']      = getr(k_hs, (s_hs - s_sp) / 4, (s_hs + 3*s_sp) / 4 * t_hs)
-        pk['r_sp_per_x']    = getr(k_sp, t_sp, (s_sp + H) * (s_sp - W) / 4)
-        pk['r_sp_per_y']    = getr(k_sp, t_sp, (s_sp + W) * (s_sp - H) / 4)
-        pk['r_hs_c_per_x']  = getr(k_hs, t_hs, (s_sp + H) * (s_sp - W) / 4)
-        pk['r_hs_c_per_y']  = getr(k_hs, t_hs, (s_sp + W) * (s_sp - H) / 4)
-        pk['r_hs_per']      = getr(k_hs, t_hs, (s_hs**2 - s_sp**2) / 4)
-        pk['r_amb_c_per_x'] = r_cv * s_hs**2 / ((s_sp + H) * (s_sp - W) / 4)
-        pk['r_amb_c_per_y'] = r_cv * s_hs**2 / ((s_sp + W) * (s_sp - H) / 4)
-        pk['r_amb_per']     = r_cv * s_hs**2 / ((s_hs**2 - s_sp**2) / 4)
-        self.pk = pk
+        self.pk = {
+            "r_sp1_x":   getr(k_sp, (s_sp - W) / 4, (s_sp + 3 * H) / 4 * t_sp),
+            "r_sp1_y":   getr(k_sp, (s_sp - H) / 4, (s_sp + 3 * W) / 4 * t_sp),
+            "r_hs1_x":   getr(k_hs, (s_sp - W) / 4, (s_sp + 3 * H) / 4 * t_hs),
+            "r_hs1_y":   getr(k_hs, (s_sp - H) / 4, (s_sp + 3 * W) / 4 * t_hs),
+            "r_hs2_x":   getr(k_hs, (s_sp - W) / 4, (3 * s_sp + H) / 4 * t_hs),
+            "r_hs2_y":   getr(k_hs, (s_sp - H) / 4, (3 * s_sp + W) / 4 * t_hs),
+            "r_hs":      getr(k_hs, (s_hs - s_sp) / 4, (s_hs + 3 * s_sp) / 4 * t_hs),
+            "r_sp_per_x":    getr(k_sp, t_sp, (s_sp + H) * (s_sp - W) / 4),
+            "r_sp_per_y":    getr(k_sp, t_sp, (s_sp + W) * (s_sp - H) / 4),
+            "r_hs_c_per_x":  getr(k_hs, t_hs, (s_sp + H) * (s_sp - W) / 4),
+            "r_hs_c_per_y":  getr(k_hs, t_hs, (s_sp + W) * (s_sp - H) / 4),
+            "r_hs_per":      getr(k_hs, t_hs, (s_hs ** 2 - s_sp ** 2) / 4),
+            "r_amb_c_per_x": r_cv * s_hs ** 2 / ((s_sp + H) * (s_sp - W) / 4),
+            "r_amb_c_per_y": r_cv * s_hs ** 2 / ((s_sp + W) * (s_sp - H) / 4),
+            "r_amb_per":     r_cv * s_hs ** 2 / ((s_hs ** 2 - s_sp ** 2) / 4),
+        }
 
-    # ------------------------------------------------------------------
+    # Node indexing
+
     def _nidx(self, l, i, j) -> int:
         return l * self.nr * self.nc + i * self.nc + j
 
     def _pidx(self, pkg) -> int:
         return self.N_grid + pkg
 
-    # ------------------------------------------------------------------
-    def build(self):
-        """Assemble the conductance matrix G. Returns G (scipy csr_matrix)."""
+    def _edge_cells(self, direction: str):
+        """(i, j) of the grid cells along one chip edge."""
+        nr, nc = self.nr, self.nc
+        if direction == "N":
+            return [(0, j) for j in range(nc)]
+        if direction == "S":
+            return [(nr - 1, j) for j in range(nc)]
+        if direction == "W":
+            return [(i, 0) for i in range(nr)]
+        return [(i, nc - 1) for i in range(nr)]  # E
+
+    def _on_edge(self, i: int, j: int, direction: str) -> bool:
+        """Whether grid cell (i, j) lies on the given chip edge."""
+        if direction == "N":
+            return i == 0
+        if direction == "S":
+            return i == self.nr - 1
+        if direction == "W":
+            return j == 0
+        return j == self.nc - 1  # E
+
+    def _edge_R(self, layer: int, direction: str, kind: str) -> float:
+        """Resistance from an edge grid cell to its peripheral spreader/sink node."""
+        if _AXIS[direction] == "y":
+            return self.ry[layer] / 2 + self.nc * self.pk[f"r_{kind}1_y"]
+        return self.rx[layer] / 2 + self.nr * self.pk[f"r_{kind}1_x"]
+
+    # Assembly
+
+    def build(self) -> sparse.csr_matrix:
+        """Assemble and cache the conductance matrix G (scipy csr_matrix)."""
         nr, nc, nl = self.nr, self.nc, self.nl
         rx, ry, rz = self.rx, self.ry, self.rz
         pk = self.pk
         HS, SP = self.HS, self.SP
 
-        data, row_idx, col_idx = [], [], []
+        data, rows, cols = [], [], []
 
         def add(r, c, v):
-            row_idx.append(r)
-            col_idx.append(c)
-            data.append(v)
+            rows.append(r); cols.append(c); data.append(v)
 
-        # ---- Grid cells ------------------------------------------------
+        # Grid cells: 5-point stencil + vertical layer coupling + edge coupling
+        # to package nodes. Between layers the resistance is the lower layer's rz.
         for l in range(nl):
             for i in range(nr):
                 for j in range(nc):
-                    n   = self._nidx(l, i, j)
+                    n = self._nidx(l, i, j)
                     dia = 0.0
-
-                    # Lateral x (columns, j-direction)
                     if j > 0:
-                        add(n, self._nidx(l, i, j-1), -1/rx[l]); dia += 1/rx[l]
-                    if j < nc-1:
-                        add(n, self._nidx(l, i, j+1), -1/rx[l]); dia += 1/rx[l]
-
-                    # Lateral y (rows, i-direction)
+                        add(n, self._nidx(l, i, j - 1), -1 / rx[l]); dia += 1 / rx[l]
+                    if j < nc - 1:
+                        add(n, self._nidx(l, i, j + 1), -1 / rx[l]); dia += 1 / rx[l]
                     if i > 0:
-                        add(n, self._nidx(l, i-1, j), -1/ry[l]); dia += 1/ry[l]
-                    if i < nr-1:
-                        add(n, self._nidx(l, i+1, j), -1/ry[l]); dia += 1/ry[l]
-
-                    # Vertical: down to l-1, uses lower layer's rz (= rz[l-1])
+                        add(n, self._nidx(l, i - 1, j), -1 / ry[l]); dia += 1 / ry[l]
+                    if i < nr - 1:
+                        add(n, self._nidx(l, i + 1, j), -1 / ry[l]); dia += 1 / ry[l]
                     if l > 0:
-                        Ra = rz[l-1]
-                        add(n, self._nidx(l-1, i, j), -1/Ra); dia += 1/Ra
+                        add(n, self._nidx(l - 1, i, j), -1 / rz[l - 1]); dia += 1 / rz[l - 1]
+                    if l < nl - 1:
+                        add(n, self._nidx(l + 1, i, j), -1 / rz[l]); dia += 1 / rz[l]
 
-                    # Vertical: up to l+1, uses CURRENT (lower) layer's rz (= rz[l]).
-                    # Between layers n1 and n2 the resistance is rz[min(n1,n2)],
-                    # the lower layer's resistance.
-                    if l < nl-1:
-                        Rb = rz[l]
-                        add(n, self._nidx(l+1, i, j), -1/Rb); dia += 1/Rb
-
-                    # Package peripheral connections
                     if l == SP:
-                        if i == 0:    # north edge
-                            R = ry[l]/2 + nc * pk['r_sp1_y']
-                            add(n, self._pidx(SP_N), -1/R); dia += 1/R
-                        if i == nr-1: # south edge
-                            R = ry[l]/2 + nc * pk['r_sp1_y']
-                            add(n, self._pidx(SP_S), -1/R); dia += 1/R
-                        if j == 0:    # west edge
-                            R = rx[l]/2 + nr * pk['r_sp1_x']
-                            add(n, self._pidx(SP_W), -1/R); dia += 1/R
-                        if j == nc-1: # east edge
-                            R = rx[l]/2 + nr * pk['r_sp1_x']
-                            add(n, self._pidx(SP_E), -1/R); dia += 1/R
-
+                        for d in _DIRS:
+                            if self._on_edge(i, j, d):
+                                R = self._edge_R(SP, d, "sp")
+                                add(n, self._pidx(_SP[d]), -1 / R); dia += 1 / R
                     elif l == HS:
-                        # All HS cells: ambient via rz[HS] (includes convective R)
-                        dia += 1/rz[HS]
-
-                        if i == 0:    # north edge -> SINK_C_N
-                            R = ry[l]/2 + nc * pk['r_hs1_y']
-                            add(n, self._pidx(SINK_C_N), -1/R); dia += 1/R
-                        if i == nr-1: # south edge -> SINK_C_S
-                            R = ry[l]/2 + nc * pk['r_hs1_y']
-                            add(n, self._pidx(SINK_C_S), -1/R); dia += 1/R
-                        if j == 0:    # west edge -> SINK_C_W
-                            R = rx[l]/2 + nr * pk['r_hs1_x']
-                            add(n, self._pidx(SINK_C_W), -1/R); dia += 1/R
-                        if j == nc-1: # east edge -> SINK_C_E
-                            R = rx[l]/2 + nr * pk['r_hs1_x']
-                            add(n, self._pidx(SINK_C_E), -1/R); dia += 1/R
+                        dia += 1 / rz[HS]                 # ambient via convective rz
+                        for d in _DIRS:
+                            if self._on_edge(i, j, d):
+                                R = self._edge_R(HS, d, "hs")
+                                add(n, self._pidx(_SINK_C[d]), -1 / R); dia += 1 / R
 
                     add(n, n, dia)
 
-        # ---- Package nodes ---------------------------------------------
-        # SINK_N: <-> SINK_C_N, <-> ambient
-        n = self._pidx(SINK_N); dia = 0
-        R = pk['r_hs2_y'] + pk['r_hs']
-        add(n, self._pidx(SINK_C_N), -1/R); dia += 1/R
-        dia += 1/(pk['r_hs_per'] + pk['r_amb_per'])
-        add(n, n, dia)
+        # Package nodes. Each block below is the symmetric partner of the edge
+        # coupling added above, plus the peripheral/ambient resistances.
+        for d in _DIRS:
+            ax = _AXIS[d]
 
-        # SINK_S
-        n = self._pidx(SINK_S); dia = 0
-        R = pk['r_hs2_y'] + pk['r_hs']
-        add(n, self._pidx(SINK_C_S), -1/R); dia += 1/R
-        dia += 1/(pk['r_hs_per'] + pk['r_amb_per'])
-        add(n, n, dia)
+            # Spreader peripheral node: to its edge SP cells and to SINK_C.
+            n = self._pidx(_SP[d]); dia = 0.0
+            for i, j in self._edge_cells(d):
+                R = self._edge_R(SP, d, "sp")
+                add(n, self._nidx(SP, i, j), -1 / R); dia += 1 / R
+            R = pk[f"r_sp_per_{ax}"]
+            add(n, self._pidx(_SINK_C[d]), -1 / R); dia += 1 / R
+            add(n, n, dia)
 
-        # SINK_W
-        n = self._pidx(SINK_W); dia = 0
-        R = pk['r_hs2_x'] + pk['r_hs']
-        add(n, self._pidx(SINK_C_W), -1/R); dia += 1/R
-        dia += 1/(pk['r_hs_per'] + pk['r_amb_per'])
-        add(n, n, dia)
+            # Sink centre-peripheral node: to its edge HS cells, SP, outer sink, ambient.
+            n = self._pidx(_SINK_C[d]); dia = 0.0
+            for i, j in self._edge_cells(d):
+                R = self._edge_R(HS, d, "hs")
+                add(n, self._nidx(HS, i, j), -1 / R); dia += 1 / R
+            R = pk[f"r_sp_per_{ax}"]
+            add(n, self._pidx(_SP[d]), -1 / R); dia += 1 / R
+            R = pk[f"r_hs2_{ax}"] + pk["r_hs"]
+            add(n, self._pidx(_SINK[d]), -1 / R); dia += 1 / R
+            dia += 1 / (pk[f"r_hs_c_per_{ax}"] + pk[f"r_amb_c_per_{ax}"])
+            add(n, n, dia)
 
-        # SINK_E
-        n = self._pidx(SINK_E); dia = 0
-        R = pk['r_hs2_x'] + pk['r_hs']
-        add(n, self._pidx(SINK_C_E), -1/R); dia += 1/R
-        dia += 1/(pk['r_hs_per'] + pk['r_amb_per'])
-        add(n, n, dia)
-
-        # SINK_C_N: <-> all HS north-edge cells, <-> SP_N, <-> SINK_N, <-> ambient
-        n = self._pidx(SINK_C_N); dia = 0
-        for j in range(nc):
-            R = ry[HS]/2 + nc * pk['r_hs1_y']
-            add(n, self._nidx(HS, 0, j), -1/R); dia += 1/R
-        R = pk['r_sp_per_y']
-        add(n, self._pidx(SP_N), -1/R); dia += 1/R
-        R = pk['r_hs2_y'] + pk['r_hs']
-        add(n, self._pidx(SINK_N), -1/R); dia += 1/R
-        dia += 1/(pk['r_hs_c_per_y'] + pk['r_amb_c_per_y'])
-        add(n, n, dia)
-
-        # SINK_C_S
-        n = self._pidx(SINK_C_S); dia = 0
-        for j in range(nc):
-            R = ry[HS]/2 + nc * pk['r_hs1_y']
-            add(n, self._nidx(HS, nr-1, j), -1/R); dia += 1/R
-        R = pk['r_sp_per_y']
-        add(n, self._pidx(SP_S), -1/R); dia += 1/R
-        R = pk['r_hs2_y'] + pk['r_hs']
-        add(n, self._pidx(SINK_S), -1/R); dia += 1/R
-        dia += 1/(pk['r_hs_c_per_y'] + pk['r_amb_c_per_y'])
-        add(n, n, dia)
-
-        # SINK_C_W
-        n = self._pidx(SINK_C_W); dia = 0
-        for i in range(nr):
-            R = rx[HS]/2 + nr * pk['r_hs1_x']
-            add(n, self._nidx(HS, i, 0), -1/R); dia += 1/R
-        R = pk['r_sp_per_x']
-        add(n, self._pidx(SP_W), -1/R); dia += 1/R
-        R = pk['r_hs2_x'] + pk['r_hs']
-        add(n, self._pidx(SINK_W), -1/R); dia += 1/R
-        dia += 1/(pk['r_hs_c_per_x'] + pk['r_amb_c_per_x'])
-        add(n, n, dia)
-
-        # SINK_C_E
-        n = self._pidx(SINK_C_E); dia = 0
-        for i in range(nr):
-            R = rx[HS]/2 + nr * pk['r_hs1_x']
-            add(n, self._nidx(HS, i, nc-1), -1/R); dia += 1/R
-        R = pk['r_sp_per_x']
-        add(n, self._pidx(SP_E), -1/R); dia += 1/R
-        R = pk['r_hs2_x'] + pk['r_hs']
-        add(n, self._pidx(SINK_E), -1/R); dia += 1/R
-        dia += 1/(pk['r_hs_c_per_x'] + pk['r_amb_c_per_x'])
-        add(n, n, dia)
-
-        # SP_N: <-> all SP north-edge cells, <-> SINK_C_N
-        n = self._pidx(SP_N); dia = 0
-        for j in range(nc):
-            R = ry[SP]/2 + nc * pk['r_sp1_y']
-            add(n, self._nidx(SP, 0, j), -1/R); dia += 1/R
-        R = pk['r_sp_per_y']
-        add(n, self._pidx(SINK_C_N), -1/R); dia += 1/R
-        add(n, n, dia)
-
-        # SP_S
-        n = self._pidx(SP_S); dia = 0
-        for j in range(nc):
-            R = ry[SP]/2 + nc * pk['r_sp1_y']
-            add(n, self._nidx(SP, nr-1, j), -1/R); dia += 1/R
-        R = pk['r_sp_per_y']
-        add(n, self._pidx(SINK_C_S), -1/R); dia += 1/R
-        add(n, n, dia)
-
-        # SP_W
-        n = self._pidx(SP_W); dia = 0
-        for i in range(nr):
-            R = rx[SP]/2 + nr * pk['r_sp1_x']
-            add(n, self._nidx(SP, i, 0), -1/R); dia += 1/R
-        R = pk['r_sp_per_x']
-        add(n, self._pidx(SINK_C_W), -1/R); dia += 1/R
-        add(n, n, dia)
-
-        # SP_E
-        n = self._pidx(SP_E); dia = 0
-        for i in range(nr):
-            R = rx[SP]/2 + nr * pk['r_sp1_x']
-            add(n, self._nidx(SP, i, nc-1), -1/R); dia += 1/R
-        R = pk['r_sp_per_x']
-        add(n, self._pidx(SINK_C_E), -1/R); dia += 1/R
-        add(n, n, dia)
+            # Outer sink node: to its SINK_C node and to ambient.
+            n = self._pidx(_SINK[d]); dia = 0.0
+            R = pk[f"r_hs2_{ax}"] + pk["r_hs"]
+            add(n, self._pidx(_SINK_C[d]), -1 / R); dia += 1 / R
+            dia += 1 / (pk["r_hs_per"] + pk["r_amb_per"])
+            add(n, n, dia)
 
         self.G = sparse.csr_matrix(
-            (data, (row_idx, col_idx)), shape=(self.N, self.N), dtype=np.float64)
+            (data, (rows, cols)), shape=(self.N, self.N), dtype=np.float64)
         return self.G
 
-    # ------------------------------------------------------------------
-    def build_rhs(self, block_powers: dict[str, float]) -> np.ndarray:
-        """Assemble the RHS vector Q (shape (N,)) from per-block powers {name: W}."""
-        Q = np.zeros(self.N)
-        cfg = self.cfg
-        ambient = cfg['ambient']
-        nr, nc = self.nr, self.nc
-        cw, ch = self.cw, self.ch
-        HS = self.HS
+    # Block <-> grid geometry
 
-        # Map block powers to Si-layer grid cells by area-weighted overlap:
-        # Q_cell += P_block * overlap_area / block_area  [W]
+    def _touched_cells(self, u: dict):
+        """Yield (i, j, cell_lx, cell_rx, cell_bot, cell_top) for every Si cell a
+        block's bounding box reaches. Row i=0 is the top (high y) of the chip."""
+        nr, nc, cw, ch = self.nr, self.nc, self.cw, self.ch
         chip_h = self.chip_h
+        by, ty_b = u["bottomy"], u["bottomy"] + u["height"]
+        lx, rx_b = u["leftx"], u["leftx"] + u["width"]
+        i1 = max(0, nr - math.ceil(ty_b / ch))
+        i2 = min(nr, nr - math.floor(by / ch))
+        j1 = max(0, math.floor(lx / cw))
+        j2 = min(nc, math.ceil(rx_b / cw))
+        for i in range(i1, i2):
+            cell_bot = chip_h - (i + 1) * ch
+            cell_top = chip_h - i * ch
+            for j in range(j1, j2):
+                yield i, j, j * cw, (j + 1) * cw, cell_bot, cell_top
+
+    def build_rhs(self, block_powers: dict[str, float]) -> np.ndarray:
+        """Assemble the RHS Q (shape (N,)) from per-block powers {name: W}.
+
+        Block power is spread onto Si cells by area-weighted overlap; heatsink
+        cells and package nodes carry the ambient boundary term.
+        """
+        Q = np.zeros(self.N)
+        ambient = self.cfg["ambient"]
 
         for u in self.units:
-            bname = u['name']
-            if bname not in block_powers:
+            P = block_powers.get(u["name"], 0.0)
+            if not P:
                 continue
-            P = block_powers[bname]
-            if P == 0:
-                continue
-            lx, by = u['leftx'], u['bottomy']
-            rx_b, ty_b = lx + u['width'], by + u['height']
-            block_area = u['width'] * u['height']
+            lx, by = u["leftx"], u["bottomy"]
+            rx_b, ty_b = lx + u["width"], by + u["height"]
+            block_area = u["width"] * u["height"]
+            for i, j, clx, crx, cbot, ctop in self._touched_cells(u):
+                ow = max(0.0, min(rx_b, crx) - max(lx, clx))
+                oh = max(0.0, min(ty_b, ctop) - max(by, cbot))
+                overlap_area = ow * oh
+                if overlap_area <= 0:
+                    continue
+                Q[self._nidx(self.SI, i, j)] += P * overlap_area / block_area
 
-            # Grid rows: i=0 is top (high y), i=nr-1 is bottom (low y)
-            i1 = nr - math.ceil((ty_b) / ch)
-            i2 = nr - math.floor(by / ch)
-            j1 = math.floor(lx / cw)
-            j2 = math.ceil(rx_b / cw)
-            i1 = max(0, i1); i2 = min(nr, i2)
-            j1 = max(0, j1); j2 = min(nc, j2)
+        HS = self.HS
+        for i in range(self.nr):
+            for j in range(self.nc):
+                Q[self._nidx(HS, i, j)] += ambient / self.rz[HS]
 
-            for i in range(i1, i2):
-                # Cell y bounds (bottom, top) in physical coords
-                cell_bot = chip_h - (i + 1) * ch
-                cell_top = chip_h - i * ch
-                for j in range(j1, j2):
-                    # Cell x bounds
-                    cell_lx = j * cw
-                    cell_rx = (j + 1) * cw
-                    # Overlap
-                    ow = min(rx_b, cell_rx) - max(lx, cell_lx)
-                    oh = min(ty_b, cell_top) - max(by, cell_bot)
-                    ow = max(0.0, ow); oh = max(0.0, oh)
-                    overlap_area = ow * oh
-                    if overlap_area <= 0:
-                        continue
-                    n = self._nidx(self.SI, i, j)
-                    # Power contribution: P_block * overlap_area / block_area [W]
-                    Q[n] += P * overlap_area / block_area
-
-        # Heatsink cells: add T_amb / rz_hs
-        for i in range(nr):
-            for j in range(nc):
-                n = self._nidx(HS, i, j)
-                Q[n] += ambient / self.rz[HS]
-
-        # Package node RHS
         pk = self.pk
-        Q[self._pidx(SP_W)] = 0
-        Q[self._pidx(SP_E)] = 0
-        Q[self._pidx(SP_N)] = 0
-        Q[self._pidx(SP_S)] = 0
-        Q[self._pidx(SINK_C_W)] = ambient / (pk['r_hs_c_per_x'] + pk['r_amb_c_per_x'])
-        Q[self._pidx(SINK_C_E)] = ambient / (pk['r_hs_c_per_x'] + pk['r_amb_c_per_x'])
-        Q[self._pidx(SINK_C_N)] = ambient / (pk['r_hs_c_per_y'] + pk['r_amb_c_per_y'])
-        Q[self._pidx(SINK_C_S)] = ambient / (pk['r_hs_c_per_y'] + pk['r_amb_c_per_y'])
-        Q[self._pidx(SINK_W)]   = ambient / (pk['r_hs_per'] + pk['r_amb_per'])
-        Q[self._pidx(SINK_E)]   = ambient / (pk['r_hs_per'] + pk['r_amb_per'])
-        Q[self._pidx(SINK_N)]   = ambient / (pk['r_hs_per'] + pk['r_amb_per'])
-        Q[self._pidx(SINK_S)]   = ambient / (pk['r_hs_per'] + pk['r_amb_per'])
-
+        for d in _DIRS:
+            ax = _AXIS[d]
+            Q[self._pidx(_SP[d])] = 0.0
+            Q[self._pidx(_SINK_C[d])] = ambient / (pk[f"r_hs_c_per_{ax}"] + pk[f"r_amb_c_per_{ax}"])
+            Q[self._pidx(_SINK[d])] = ambient / (pk["r_hs_per"] + pk["r_amb_per"])
         return Q
 
-    # ------------------------------------------------------------------
-    def factorize(self):
-        """LU-factorize G; call once, then reuse for multiple RHS."""
+    # Solves
+
+    def factorize(self) -> None:
+        """LU-factorize G once, then reuse for multiple RHS."""
         if self.G is None:
             self.build()
         self._factor = factorized(self.G.tocsc())
 
     def solve(self, Q: np.ndarray) -> np.ndarray:
-        """Solve G*T = Q. Returns T of shape (N,)."""
+        """Solve G*T = Q for the full temperature vector (shape (N,))."""
         if self._factor is not None:
             return self._factor(Q)
         if self.G is None:
             self.build()
         return spsolve(self.G, Q)
 
-    # ------------------------------------------------------------------
     def solve_from_powers(self, block_powers: dict[str, float]) -> np.ndarray:
-        """Build the RHS and solve for the full temperature vector."""
-        Q = self.build_rhs(block_powers)
-        return self.solve(Q)
+        return self.solve(self.build_rhs(block_powers))
 
     def silicon_layer(self, T: np.ndarray) -> np.ndarray:
-        """Extract Si-layer temperatures as (nr, nc) array."""
+        """Si-layer temperatures as an (nr, nc) array."""
         nr, nc = self.nr, self.nc
-        return T[self.SI * nr * nc : (self.SI+1) * nr * nc].reshape(nr, nc)
+        return T[self.SI * nr * nc:(self.SI + 1) * nr * nc].reshape(nr, nc)
 
     def all_layers(self, T: np.ndarray) -> np.ndarray:
-        """Extract grid temperatures as (nl, nr, nc) array."""
+        """Grid temperatures as an (nl, nr, nc) array."""
         return T[:self.N_grid].reshape(self.nl, self.nr, self.nc)
 
-    # ------------------------------------------------------------------
-    # Adjoint gradient for DRO / CVaR optimization
-    # ------------------------------------------------------------------
-    def adjoint_dT_dQ(self, T: np.ndarray, dL_dT: np.ndarray) -> np.ndarray:
-        """
-        Adjoint solve dL/dQ = G^{-T} @ dL/dT. G is symmetric, so G^T = G and
-        the forward LU factor is reused (one back-substitution, no re-factorize).
-        """
+    # Adjoint gradients
+
+    def adjoint_dT_dQ(self, dL_dT: np.ndarray) -> np.ndarray:
+        """Adjoint solve: returns lam with G^T lam = dL/dT. G is symmetric, so the
+        forward LU factor is reused; only the un-factorised path solves G^T
+        explicitly."""
         if self._factor is not None:
             return self._factor(dL_dT)
         return spsolve(self.G.T.tocsc(), dL_dT)
 
     def peak_T_gradient(self, block_powers: dict[str, float]) -> tuple[float, dict[str, float]]:
-        """
-        Compute peak Si temperature and its gradient w.r.t. block powers.
-        Returns (peak_T, {block_name: dPeakT/dP_block}).
+        """Peak Si temperature rise dT = T_peak - T_ambient [K] and its gradient
+        w.r.t. each block's power [K/W]. Returns dT, never absolute T (project
+        invariant: all thermal metrics are ambient-relative).
+
+        WARNING: the gradient holds the argmax cell fixed. It is a subgradient at
+        placements where the hot cell changes; callers probing near such kinks
+        must detect them separately.
         """
         Q = self.build_rhs(block_powers)
         T = self.solve(Q)
-        nr, nc = self.nr, self.nc
+        nc = self.nc
         T_si = self.silicon_layer(T)
-        idx_flat = np.argmax(T_si)
-        peak_i, peak_j = divmod(int(idx_flat), nc)
-        peak_val = float(T_si[peak_i, peak_j])
+        peak_i, peak_j = divmod(int(np.argmax(T_si)), nc)
+        peak_dt = float(T_si[peak_i, peak_j]) - self.cfg["ambient"]
 
-        # dL/dT: 1 at peak Si cell, 0 elsewhere
+        # adjoint: G^T lam = e_{i*}
         dL_dT = np.zeros(self.N)
         dL_dT[self._nidx(self.SI, peak_i, peak_j)] = 1.0
-        lam = self.adjoint_dT_dQ(T, dL_dT)
+        lam = self.adjoint_dT_dQ(dL_dT)
 
-        # dQ/dP_block = overlap_area / block_area at Si cells
-        chip_h = self.chip_h
-        cw, ch = self.cw, self.ch
+        # grad = A(p)^T lam; dQ/dP_b = overlap_area / block_area on the Si cells
+        # block b touches (column b of A(p)).
         grad = {}
         for u in self.units:
-            bname = u['name']
-            lx, by = u['leftx'], u['bottomy']
-            rx_b, ty_b = lx + u['width'], by + u['height']
-            block_area = u['width'] * u['height']
-            i1 = max(0, nr - math.ceil(ty_b / ch))
-            i2 = min(nr, nr - math.floor(by / ch))
-            j1 = max(0, math.floor(lx / cw))
-            j2 = min(nc, math.ceil(rx_b / cw))
+            lx, by = u["leftx"], u["bottomy"]
+            rx_b, ty_b = lx + u["width"], by + u["height"]
+            block_area = u["width"] * u["height"]
             g = 0.0
-            for i in range(i1, i2):
-                cell_bot = chip_h - (i + 1) * ch
-                cell_top = chip_h - i * ch
-                for j in range(j1, j2):
-                    cell_lx = j * cw; cell_rx = (j + 1) * cw
-                    ow = max(0.0, min(rx_b, cell_rx) - max(lx, cell_lx))
-                    oh = max(0.0, min(ty_b, cell_top) - max(by, cell_bot))
-                    if ow * oh <= 0:
-                        continue
-                    n = self._nidx(self.SI, i, j)
-                    g += lam[n] * (ow * oh) / block_area
-            grad[bname] = g
-        return peak_val, grad
+            for i, j, clx, crx, cbot, ctop in self._touched_cells(u):
+                ow = max(0.0, min(rx_b, crx) - max(lx, clx))
+                oh = max(0.0, min(ty_b, ctop) - max(by, cbot))
+                if ow * oh <= 0:
+                    continue
+                g += lam[self._nidx(self.SI, i, j)] * (ow * oh) / block_area
+            grad[u["name"]] = g
+        return peak_dt, grad
+
+    def power_injection_matrix(self) -> np.ndarray:
+        """A(p): dQ/dP as a dense (N, n_units) matrix — column b holds block b's
+        area-overlap fractions on the Si cells (no ambient terms). T = G^{-1}
+        (A P + b_amb), so row_i(G^{-1}A) = a_i = A(p)^T lam_i for the node-i
+        adjoint lam_i (G^T lam_i = e_i)."""
+        A = np.zeros((self.N, len(self.units)))
+        for b, u in enumerate(self.units):
+            lx, by = u["leftx"], u["bottomy"]
+            rx_b, ty_b = lx + u["width"], by + u["height"]
+            block_area = u["width"] * u["height"]
+            for i, j, clx, crx, cbot, ctop in self._touched_cells(u):
+                ow = max(0.0, min(rx_b, crx) - max(lx, clx))
+                oh = max(0.0, min(ty_b, ctop) - max(by, cbot))
+                if ow * oh > 0:
+                    A[self._nidx(self.SI, i, j), b] += (ow * oh) / block_area
+        return A
 
     def rhs_position_grad(self, lam: np.ndarray,
                           block_powers: dict[str, float]
                           ) -> tuple[dict[str, float], dict[str, float]]:
         """Exact position gradient of lam^T Q per block, as (dcx, dcy) dicts.
 
-        Block-to-cell power overlap is piecewise-linear in position, so the
-        analytic derivative is exact (a one-sided subgradient on cell boundaries).
+        Block-to-cell overlap is piecewise-linear in position, so the analytic
+        derivative is exact (a one-sided subgradient on cell boundaries).
         """
-        nr, nc = self.nr, self.nc
-        cw, ch = self.cw, self.ch
-        chip_h = self.chip_h
         dcx: dict[str, float] = {}
         dcy: dict[str, float] = {}
         for u in self.units:
-            name = u['name']
+            name = u["name"]
             P = block_powers.get(name, 0.0)
             if P == 0.0:
-                dcx[name] = 0.0; dcy[name] = 0.0
+                dcx[name] = dcy[name] = 0.0
                 continue
-            lx, by = u['leftx'], u['bottomy']
-            rx_b, ty_b = lx + u['width'], by + u['height']
-            block_area = u['width'] * u['height']
-            i1 = max(0, nr - math.ceil(ty_b / ch))
-            i2 = min(nr, nr - math.floor(by / ch))
-            j1 = max(0, math.floor(lx / cw))
-            j2 = min(nc, math.ceil(rx_b / cw))
-            gx = 0.0
-            gy = 0.0
-            for i in range(i1, i2):
-                cell_bot = chip_h - (i + 1) * ch
-                cell_top = chip_h - i * ch
-                oh = min(ty_b, cell_top) - max(by, cell_bot)
+            lx, by = u["leftx"], u["bottomy"]
+            rx_b, ty_b = lx + u["width"], by + u["height"]
+            block_area = u["width"] * u["height"]
+            gx = gy = 0.0
+            for i, j, clx, crx, cbot, ctop in self._touched_cells(u):
+                oh = min(ty_b, ctop) - max(by, cbot)
                 if oh <= 0:
                     continue
-                doh = (1.0 if ty_b < cell_top else 0.0) - (1.0 if by > cell_bot else 0.0)
-                for j in range(j1, j2):
-                    cell_lx = j * cw; cell_rx = (j + 1) * cw
-                    ow = min(rx_b, cell_rx) - max(lx, cell_lx)
-                    if ow <= 0:
-                        continue
-                    dow = (1.0 if rx_b < cell_rx else 0.0) - (1.0 if lx > cell_lx else 0.0)
-                    l = lam[self._nidx(self.SI, i, j)]
-                    gx += l * oh * dow
-                    gy += l * ow * doh
+                ow = min(rx_b, crx) - max(lx, clx)
+                if ow <= 0:
+                    continue
+                dow = (1.0 if rx_b < crx else 0.0) - (1.0 if lx > clx else 0.0)
+                doh = (1.0 if ty_b < ctop else 0.0) - (1.0 if by > cbot else 0.0)
+                l = lam[self._nidx(self.SI, i, j)]
+                gx += l * oh * dow
+                gy += l * ow * doh
             dcx[name] = P / block_area * gx
             dcy[name] = P / block_area * gy
         return dcx, dcy
 
 
-# ---------------------------------------------------------------------------
 # External reference-solver runner
-# ---------------------------------------------------------------------------
 
 def run_reference_grid(flp_path: str, ptrace_path: str, config_path: str,
-                     reference_bin: str, nr: int, nc: int,
-                     out_grid: str, out_steady: str) -> None:
-    """Run the external reference solver in grid mode; writes grid_steady + block_steady files."""
+                       reference_bin: str, nr: int, nc: int,
+                       out_grid: str, out_steady: str) -> None:
+    """Run the external reference solver in grid mode (writes grid + block steady files)."""
     import subprocess
     cmd = [
-        reference_bin,
-        '-c', config_path,
-        '-f', flp_path,
-        '-p', ptrace_path,
-        '-model_type', 'grid',
-        '-grid_rows', str(nr),
-        '-grid_cols', str(nc),
-        '-grid_steady_file', out_grid,
-        '-steady_file', out_steady,
+        reference_bin, "-c", config_path, "-f", flp_path, "-p", ptrace_path,
+        "-model_type", "grid", "-grid_rows", str(nr), "-grid_cols", str(nc),
+        "-grid_steady_file", out_grid, "-steady_file", out_steady,
     ]
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
-        raise RuntimeError(f'reference solver failed:\n{r.stderr}')
+        raise RuntimeError(f"reference solver failed:\n{r.stderr}")
 
 
 def read_reference_grid_steady(path: str, nl: int, nr: int, nc: int) -> np.ndarray:
-    """
-    Parse a grid_steady_file into array of shape (nl, nr, nc).
-    File format: 'Layer n:\\n' then lines '  cell_idx\\t temp\\n'.
-    """
+    """Parse a grid_steady_file ('Layer n:' then 'idx temp' lines) into (nl, nr, nc)."""
     T = np.zeros((nl, nr, nc))
+    layer = -1
     with open(path) as f:
-        layer = -1
         for line in f:
             line = line.strip()
-            if line.startswith('Layer'):
-                layer = int(line.split()[1].rstrip(':'))
-                continue
-            if line and layer >= 0:
-                parts = line.split()
-                cidx = int(parts[0])
-                temp = float(parts[1])
-                i, j = divmod(cidx, nc)
-                T[layer, i, j] = temp
+            if line.startswith("Layer"):
+                layer = int(line.split()[1].rstrip(":"))
+            elif line and layer >= 0:
+                cidx, temp = line.split()[:2]
+                i, j = divmod(int(cidx), nc)
+                T[layer, i, j] = float(temp)
     return T
 
 
 def read_reference_block_steady(path: str) -> dict[str, float]:
-    """Parse block steady-state output."""
+    """Parse a block steady-state output into {block_name: temperature}."""
     temps = {}
     with open(path) as f:
         for line in f:
             line = line.strip()
-            if not line or line.startswith('#'):
+            if not line or line.startswith("#"):
                 continue
-            parts = line.split('\t')
+            parts = line.split("\t")
             if len(parts) >= 2:
                 temps[parts[0]] = float(parts[1])
     return temps
 
 
-# ---------------------------------------------------------------------------
-# Randomised power map generator
-# ---------------------------------------------------------------------------
+# Randomised power-map generator
 
 def random_power_map(units: list[dict], total_power: float,
                      rng: np.random.Generator,
                      hot_fraction: float = 0.4) -> dict[str, float]:
-    """
-    Generate a randomised but physically plausible block power map.
-    total_power: target total chip power in W.
-    hot_fraction: fraction of units that are 'active' (the rest get idle power ~5%).
+    """A randomised but plausible block power map summing to `total_power` [W].
+
+    A `hot_fraction` of units draw active power (0.5-3.0 W raw); the rest idle at
+    a 5% baseline. Raw values are area-weighted, then normalised to the target.
     """
     n = len(units)
-    # Choose which units are hot
     n_hot = max(1, int(n * hot_fraction))
     hot_idx = rng.choice(n, size=n_hot, replace=False)
-    hot_set = set(hot_idx)
 
-    areas = np.array([u['width'] * u['height'] for u in units])
+    areas = np.array([u["width"] * u["height"] for u in units])
     total_area = areas.sum()
 
-    raw = np.ones(n) * 0.05  # idle baseline
-    for idx in hot_set:
+    raw = np.full(n, 0.05)
+    # Draw in ascending index order (explicit sort, not set-iteration order,
+    # which is a CPython hash-table detail): the uniform draws are
+    # order-dependent and this makes the stream floorplan-size-independent.
+    for idx in np.sort(hot_idx):
         raw[idx] = rng.uniform(0.5, 3.0)
 
-    # Normalise to target total power (weighted by area to keep density variation)
-    power_density = raw / total_area
-    powers = power_density * areas * (total_power / (power_density * areas).sum())
-
-    return {u['name']: float(powers[i]) for i, u in enumerate(units)}
+    weighted = raw * areas
+    powers = weighted * (total_power / weighted.sum())
+    return {u["name"]: float(powers[i]) for i, u in enumerate(units)}

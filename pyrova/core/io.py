@@ -31,6 +31,23 @@ def parse_flp(path: str) -> list[dict]:
     return units
 
 
+def parse_desc_connectivity(path: str) -> list[tuple[str, str, float]]:
+    """Parse the connectivity section of a HotFloorplan ``.desc`` file.
+
+    The ``.desc`` format has two sections: block area/aspect lines (5 fields:
+    ``name area min_aspect max_aspect rotable``) and connectivity lines (3
+    fields: ``unit1 unit2 wire_density``). Returns the connectivity edges as
+    ``(unit1, unit2, wire_density)``; block lines are ignored (geometry comes
+    from the ``.flp``). This is the canonical netlist source (e.g. the bundled
+    ``ev6.desc`` is HotSpot's HotFloorplan Alpha-EV6 connectivity)."""
+    edges = []
+    for line in _data_lines(path):
+        parts = line.split()
+        if len(parts) == 3:
+            edges.append((parts[0], parts[1], float(parts[2])))
+    return edges
+
+
 def parse_config(path: str) -> dict:
     """Parse a ``.config`` file of ``-key value`` lines into ``{key: value}``.
 

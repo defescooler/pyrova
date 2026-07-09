@@ -103,6 +103,7 @@ class Design:
     chip_width: float          # metres
     chip_height: float         # metres
     macros: list[Macro]        = field(default_factory=list)
+    nets: list[list[str]]      = field(default_factory=list)  # connectivity for HPWL
     power_scenarios: list[PowerScenario] = field(default_factory=list)
     thermal_config: ThermalConfig = field(default_factory=ThermalConfig)
     constraints: dict = field(default_factory=lambda: {
