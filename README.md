@@ -1,24 +1,43 @@
 # Pyrova
 
-A differentiable thermal-aware macro placer.
+A differentiable macro placer for thermal tail risk under uncertain workload power.
 
 ## Setup
 
-python -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
+    python -m venv .venv && source .venv/bin/activate
+    make install
 
-## Run
+## Verify
 
-Engine validation:
+    make verify
 
-    python -m pyrova.tests.test_gradients
+Two gates, both must pass before any change to the numerics lands:
 
-Experiments (pyrova/results/):
+- `pyrova/tests/golden.py` — bit-level snapshot of the solver field, peak,
+  adjoint gradient, and placer objectives. Per-platform (BLAS-dependent);
+  regenerate on a new machine with `make golden`.
+- `pyrova/tests/test_gradients.py` — finite-difference checks of every
+  gradient path (max-error asserts, subgradient kinks detected and exempted).
 
-    python pyrova/experiments/exp001_sensitivity.py            # workload->placement sensitivity
-    python pyrova/experiments/exp003_mean_cvar_correlation.py  # mechanism
-    python pyrova/experiments/exp004_tail_sample_sweep.py      # N_train x alpha learnability sweep, i.i.d.
-    python pyrova/experiments/exp005_structured_workload.py    # exp004 under structured workload 
-    python pyrova/experiments/exp006_real_traces.py            # real-trace probe 
-    python pyrova/experiments/exp007_structured_dro.py         # DRO vs pure CVaR at small N 
-    python pyrova/experiments/eval_dro_benchmarks.py           # i.i.d. DRO teeth + negative control
+## Layout
+
+    pyrova/thermal/       FD solver + adjoint
+    pyrova/optimizer/     differentiable placer, legalization pass
+    pyrova/objectives/    CVaR / DRO / wirelength / overlap terms
+    pyrova/workloads/     workload-power models and dataset loaders
+    pyrova/evaluation/    estimators and statistics (CVaR, corrected CIs, Holm)
+    pyrova/experiments/   one self-contained script per experiment
+    pyrova/inputs/        floorplans and thermal configs
+    pyrova/results/       experiment outputs
+    scripts/              Slurm submission scripts
+
+## Reproduce
+
+Each result file in `pyrova/results/` is produced by exactly one script in
+`pyrova/experiments/`; run it directly, or `make reproduce` for the
+self-contained set. Long-running studies have Slurm scripts under `scripts/`.
+
+The real-workload experiments need the BOOM dataset (GPL):
+
+    git clone --depth 1 https://github.com/zhaijw18/mcpat-calib-public.git
+    export BOOM_DATA=$(pwd)/mcpat-calib-public
