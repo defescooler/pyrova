@@ -1,0 +1,28 @@
+Structured-workload learnability sweep on ev6 (30 blocks). N_TEST=1500, 5 seeds, grid 18x18, 30 iter.
+Tests mean-opt vs PURE CVaR-opt (eps=0). NOT a DRO result; the Wasserstein penalty is tested in exp007.
+cell = dCVaR[flag]/dMean [K], both = mean-opt minus CVaR-opt. '*' dCVaR CI>0 (CVaR-opt lower tail), 'x' dCVaR CI<0.
+read together: dCVaR>0 & dMean<0 = genuine mean-for-tail trade (real tail dimension).
+   N_TRAIN | a=0.80        a=0.90        a=0.95       
+  ----------------------------------------------------
+    # N_TRAIN=16 a=0.8: dCVaR=+0.288 CI[-0.642,+1.217] p=0.4387  dMean=-0.896 CI[-1.619,-0.174]
+    # N_TRAIN=16 a=0.9: dCVaR=-0.115 CI[-0.310,+0.080] p=0.1770  dMean=-1.099 CI[-2.324,+0.127]
+    # N_TRAIN=16 a=0.95: dCVaR=-0.349 CI[-1.391,+0.694] p=0.4059  dMean=-2.334 CI[-3.216,-1.452]
+        16 |  +0.29 /-0.90  -0.11 /-1.10  -0.35 /-2.33
+    # N_TRAIN=32 a=0.8: dCVaR=+0.416 CI[-0.173,+1.004] p=0.1215  dMean=-0.555 CI[-1.410,+0.300]
+    # N_TRAIN=32 a=0.9: dCVaR=+0.080 CI[-0.146,+0.307] p=0.3799  dMean=-1.480 CI[-2.060,-0.901]
+    # N_TRAIN=32 a=0.95: dCVaR=+0.187 CI[-0.149,+0.522] p=0.1975  dMean=-1.776 CI[-2.165,-1.388]
+        32 |  +0.42 /-0.56  +0.08 /-1.48  +0.19 /-1.78
+    # N_TRAIN=64 a=0.8: dCVaR=+0.977 CI[+0.087,+1.867] p=0.0381  dMean=-0.837 CI[-1.484,-0.189]
+    # N_TRAIN=64 a=0.9: dCVaR=+0.643 CI[+0.208,+1.077] p=0.0148  dMean=-1.769 CI[-2.352,-1.185]
+    # N_TRAIN=64 a=0.95: dCVaR=+0.338 CI[+0.076,+0.601] p=0.0231  dMean=-1.992 CI[-2.441,-1.543]
+        64 |  +0.98*/-0.84  +0.64*/-1.77  +0.34*/-1.99
+    # N_TRAIN=128 a=0.8: dCVaR=+0.912 CI[-0.114,+1.939] p=0.0690  dMean=-0.914 CI[-1.308,-0.520]
+    # N_TRAIN=128 a=0.9: dCVaR=+0.694 CI[+0.024,+1.364] p=0.0452  dMean=-1.258 CI[-1.790,-0.726]
+    # N_TRAIN=128 a=0.95: dCVaR=+0.591 CI[+0.420,+0.762] p=0.0007  dMean=-1.913 CI[-2.428,-1.397]
+       128 |  +0.91 /-0.91  +0.69*/-1.26  +0.59*/-1.91
+    # N_TRAIN=256 a=0.8: dCVaR=+0.495 CI[-0.517,+1.507] p=0.2459  dMean=-0.832 CI[-1.823,+0.159]
+    # N_TRAIN=256 a=0.9: dCVaR=+0.550 CI[+0.251,+0.850] p=0.0070  dMean=-1.468 CI[-1.885,-1.051]
+    # N_TRAIN=256 a=0.95: dCVaR=+0.494 CI[+0.406,+0.581] p=0.0001  dMean=-1.704 CI[-2.292,-1.117]
+       256 |  +0.50 /-0.83  +0.55*/-1.47  +0.49*/-1.70
+
+Verdict (pure CVaR, not DRO): mean-for-tail trade SUPPORTED after Holm correction (15 cells) in: N=128,a=0.95(+0.59), N=256,a=0.95(+0.49)

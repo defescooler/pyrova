@@ -1,0 +1,1 @@
+N_ORACLE ladder cell: ev6 i.i.d., N_ORACLE=1500, budget=240 (fixed), 6 pairs (offset 0), grid 24^2, N_TEST=8000. [full]

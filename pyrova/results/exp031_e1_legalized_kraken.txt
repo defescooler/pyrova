@@ -1,0 +1,6 @@
+exp031 (P11): E1 headlines under legalized evaluation. alpha=0.9, train@18+jitter, 10 it, legal tol 0.1%, testbed=kraken. [SMOKE - not a result]
+
+===== Kraken (exp025 E1): 10 blocks, E1 x 2 pairs, N_ORACLE=40, eval@32 raw+legalized =====
+  pair 0: D*_raw=+1.148  D*_legal=+1.697  (overlap mean 3.44->0.04%, cvar 4.36->0.08%)
+  pair 1: D*_raw=+1.426  D*_legal=+0.799  (overlap mean 8.61->0.03%, cvar 3.92->0.09%)
+  Kraken (exp025 E1): too few legal pairs (2) — NO VERDICT.

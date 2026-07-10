@@ -1,0 +1,10 @@
+exp018b: matched-grid solver-vs-reference diagnostic. Placements trained@18^2 (structured N=128, alpha=0.95), BOTH solvers evaluated@32^2 on 80 scenarios, 2 seeds.
+  seed 0 mean: matched@32 peak MAE=2.5 mK  our_meanpeak=23.709  ref=23.710 K
+  seed 0 cvar: matched@32 peak MAE=2.9 mK  our_meanpeak=25.126  ref=25.127 K
+  seed 0: matched-32 dCVaR our=-0.252 K  ref=-0.250 K  sign AGREES
+  seed 1 mean: matched@32 peak MAE=2.8 mK  our_meanpeak=25.987  ref=25.988 K
+  seed 1 cvar: matched@32 peak MAE=2.6 mK  our_meanpeak=29.211  ref=29.212 K
+  seed 1: matched-32 dCVaR our=-4.693 K  ref=-4.695 K  sign AGREES
+
+MATCHED-GRID AGREEMENT (32^2, 320 points): MAE=2.7 mK, r=1.000000
+Interpretation: this is the honest solver-vs-reference number at matched resolution (contrast exp018's 1.5-3.0 K, which was our@18 vs ref@32 and confounded by discretisation). Use THIS number for solver-fidelity claims.

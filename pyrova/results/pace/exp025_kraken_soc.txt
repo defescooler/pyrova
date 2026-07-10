@@ -1,0 +1,26 @@
+exp025: Kraken measurement-anchored SoC (10 blocks, die 2.8x3.2 mm). alpha=0.9; train@18+jitter=1.0; eval@64; 120 it; mean arm best-of-3; scale k=106.6 to weighted-mean peak 40.0 K (BOOM protocol — relative structure unchanged).
+regime stats: E[total]=13.04 (scaled)  total-CV=0.994  heaviest-engine share=41%
+assumed (printed per SCOPE CONTRACT): non-CUTIE areas, sub-block power splits, mode duty cycles {'event': 0.3, 'frame': 0.1, 'dronet_p': 0.1, 'dronet_e': 0.15, 'fusion': 0.15, 'idle': 0.2}
+  mode event    : hotspot near SNE_1
+  mode frame    : hotspot near CUTIE_PE
+  mode dronet_p : hotspot near CL_CORES
+  mode dronet_e : hotspot near CL_CORES
+  mode fusion   : hotspot near CL_CORES
+  mode idle     : hotspot near FC
+GATE: hotspot spans 4 distinct blocks across modes (requires >= 3) -> PASS
+
+E1: oracle D*, N_ORACLE=1000, 5 pairs, eval on common 1000-scenario holdout at 64^2:
+  pair 0: D*_k = +1.913 K
+  pair 1: D*_k = +1.592 K
+  pair 2: D*_k = +1.596 K
+  pair 3: D*_k = +1.625 K
+  pair 4: D*_k = +1.804 K
+  D* = +1.706 K CI[+1.526,+1.886]
+
+E2: learnability vs mean-strong (bo3), 5 seeds:
+  N=32 cvar : dCVaR=+1.837* [+0.965,+2.710]  dMean=-0.898 [-1.134,-0.663]
+  N=32 blend: dCVaR=+1.762* [+0.980,+2.544]  dMean=-0.589 [-1.048,-0.131]
+  N=128 cvar : dCVaR=+2.186* [+1.344,+3.029]  dMean=-0.882 [-1.096,-0.668]
+  N=128 blend: dCVaR=+2.021* [+1.193,+2.849]  dMean=-0.562 [-0.798,-0.326]
+
+PRE-REGISTERED VERDICT: PAYS: on the measurement-anchored Kraken model, risk-aware placement buys +1.706 K CI[+1.53,+1.89] of true tail (oracle) and the trade is learnable at [(32, 'cvar'), (32, 'blend'), (128, 'cvar'), (128, 'blend')] — extends exp023's existence result to real-silicon-anchored structure (scope: model, not traces).

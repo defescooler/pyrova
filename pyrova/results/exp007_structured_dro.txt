@@ -1,0 +1,54 @@
+DRO vs pure CVaR at small N on ev6 (30 blocks). grid 18x18, 30 iter, eps=[0.05, 0.1, 0.2].
+vs_mean = CVaR(mean-opt) - CVaR(placement) (>0 beats mean on tail).
+vs_cvar0 = CVaR(pure-CVaR) - CVaR(placement) (>0 = DRO beats pure CVaR, the primary test).
+regret = CVaR(placement) - CVaR(cvar-oracle), with CI (distance to achievable tail; the oracle reference itself is a single run).
+'*' CI>0, 'x' CI<0 on the paired per-seed difference. STRUCTURED is the test; IID is the negative control (DRO should not beat pure CVaR there).
+LIMITATIONS (a negative verdict is conditional on both): (1) eps values are arbitrary — the cross-validation calibration Esfahani-Kuhn Sec 7.2 prescribes has not been run; (2) the implemented penalty is the tail-data approximation of the dual (~50% of the exact Lipschitz constant on a test placement; see objectives/dro.py) — this experiment tests THAT penalty, not the exact dual.
+
+=== arm: structured ===   cvar-oracle(N=1500) OOS CVaR = 37.747 K
+  N_TRAIN=16  (alpha=0.9, 5 seeds, N_TEST=1500)
+    placement    OOSmean  OOSCVaR         vs_mean        vs_cvar0    regret
+    mean          23.683   38.245           -               -        +0.498* [+0.25,+0.74]
+    cvar(e0)      25.159   38.453          -0.21            -        +0.706* [+0.03,+1.38]
+    dro(e0.05)    25.396   38.648          -0.40           -0.19     +0.901  [-0.03,+1.83]
+    dro(e0.1)     25.233   38.543          -0.30           -0.09     +0.796* [+0.07,+1.53]
+    dro(e0.2)     25.247   38.547          -0.30           -0.09     +0.800* [+0.19,+1.41]
+  N_TRAIN=32  (alpha=0.9, 5 seeds, N_TEST=1500)
+    placement    OOSmean  OOSCVaR         vs_mean        vs_cvar0    regret
+    mean          23.516   38.655           -               -        +0.909* [+0.28,+1.54]
+    cvar(e0)      25.042   38.024          +0.63            -        +0.277* [+0.09,+0.46]
+    dro(e0.05)    25.088   38.154          +0.50           -0.13     +0.407* [+0.03,+0.78]
+    dro(e0.1)     24.759   38.048          +0.61           -0.02     +0.301* [+0.09,+0.51]
+    dro(e0.2)     25.238   38.360          +0.30           -0.34     +0.614* [+0.06,+1.17]
+  N_TRAIN=64  (alpha=0.9, 5 seeds, N_TEST=1500)
+    placement    OOSmean  OOSCVaR         vs_mean        vs_cvar0    regret
+    mean          23.314   38.251           -               -        +0.504* [+0.30,+0.71]
+    cvar(e0)      25.046   37.841          +0.41*           -        +0.094  [-0.03,+0.22]
+    dro(e0.05)    25.046   37.945          +0.31           -0.10     +0.198  [-0.02,+0.42]
+    dro(e0.1)     24.991   37.945          +0.31           -0.10     +0.198  [-0.00,+0.40]
+    dro(e0.2)     25.229   38.094          +0.16           -0.25x    +0.347* [+0.15,+0.55]
+
+=== arm: iid ===   cvar-oracle(N=1500) OOS CVaR = 36.126 K
+  N_TRAIN=16  (alpha=0.9, 5 seeds, N_TEST=1500)
+    placement    OOSmean  OOSCVaR         vs_mean        vs_cvar0    regret
+    mean          22.269   37.581           -               -        +1.455* [+1.00,+1.91]
+    cvar(e0)      22.829   38.028          -0.45            -        +1.901* [+1.33,+2.48]
+    dro(e0.05)    22.903   38.331          -0.75x          -0.30     +2.204* [+1.45,+2.96]
+    dro(e0.1)     22.983   38.456          -0.87x          -0.43     +2.329* [+1.60,+3.06]
+    dro(e0.2)     23.016   38.488          -0.91x          -0.46     +2.361* [+1.44,+3.28]
+  N_TRAIN=32  (alpha=0.9, 5 seeds, N_TEST=1500)
+    placement    OOSmean  OOSCVaR         vs_mean        vs_cvar0    regret
+    mean          21.855   36.719           -               -        +0.593* [+0.15,+1.03]
+    cvar(e0)      22.940   38.069          -1.35x           -        +1.942* [+1.44,+2.44]
+    dro(e0.05)    23.095   38.195          -1.48x          -0.13     +2.069* [+1.55,+2.58]
+    dro(e0.1)     22.872   38.029          -1.31x          +0.04     +1.903* [+1.61,+2.20]
+    dro(e0.2)     23.001   38.350          -1.63x          -0.28     +2.224* [+1.83,+2.62]
+  N_TRAIN=64  (alpha=0.9, 5 seeds, N_TEST=1500)
+    placement    OOSmean  OOSCVaR         vs_mean        vs_cvar0    regret
+    mean          21.586   36.627           -               -        +0.500  [-0.03,+1.03]
+    cvar(e0)      22.730   37.820          -1.19x           -        +1.693* [+1.26,+2.12]
+    dro(e0.05)    22.725   37.706          -1.08x          +0.11     +1.579* [+0.92,+2.24]
+    dro(e0.1)     22.728   37.734          -1.11x          +0.09     +1.608* [+0.96,+2.26]
+    dro(e0.2)     22.688   37.673          -1.05x          +0.15     +1.547* [+0.97,+2.13]
+
+Reading: the DRO penalty helps iff structured vs_cvar0 CI>0 at small N while the iid control stays ~0. Both ~0 => penalty inert / eps miscalibrated.

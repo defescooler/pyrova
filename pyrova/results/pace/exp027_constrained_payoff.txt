@@ -1,0 +1,12 @@
+exp027: wirelength-CONSTRAINED payoff (Problem A). obj = thermal + lambda*smoothHPWL. alpha=0.9. [full run]
+lambda grid: [0.0, 100.0, 300.0, 900.0, 2500.0]
+
+--- G1 regime gates ---
+  EV6: 14 canonical nets from ev6.desc (HotFloorplan).
+  G1 (EV6 corr(FP,INT)): -0.237 -> PASS
+
+===== testbed EV6: 30 blocks, chip 16.0x16.0 mm, 14 nets =====
+  train@18+jitter1.0, eval@64, 120 it, both arms best-of-3; N_ORACLE=600, 5 pairs.
+  lambda=      0: D*=-0.225 [-1.073,+0.622] p=0.502  dMean=-2.051  HPWL(mean/cvar)=104.3/114.4 mm
+  lambda=    100: D*=-0.215 [-5.792,+5.362] p=0.920  dMean=-2.217  HPWL(mean/cvar)=71.2/69.6 mm
+  lambda=    300: D*=-0.430 [-5.157,+4.298] p=0.813  dMean=-2.192  HPWL(mean/cvar)=63.2/63.1 mm

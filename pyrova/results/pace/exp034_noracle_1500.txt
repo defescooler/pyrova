@@ -1,0 +1,3 @@
+N_ORACLE ladder cell: ev6 i.i.d., N_ORACLE=1500, budget=240 (fixed), 5 pairs, grid 24^2, N_TEST=8000. [full]
+D*(N_ORACLE=1500) = -0.0919 K CI[-0.2019,+0.0181] p=0.0812
+(rising toward 0 as N_ORACLE grows => estimator bias; flat negative => not bias. Compare cells across the array.)

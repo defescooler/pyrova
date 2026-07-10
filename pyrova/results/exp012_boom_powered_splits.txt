@@ -1,0 +1,10 @@
+exp012: powered BOOM split design. 80 programs, 60/20 x 20 splits, alpha=0.9, grid 18x18, 30 iter, gammas=[0.0, 0.75, 1.0].
+NB half-width factor sqrt(1/J + n_te/n_tr) = 0.62 sd (exp009's 40/40x10 was 1.05 sd -> ~1.7x tighter).
+CAVEAT: test tail at alpha=0.9 is ~1 programs per split — noisier per-split deltas, unbiased, averaged over J=20.
+
+   gamma  OOSmean  OOSCVaR         dCVaR vs mean-opt         dMean vs mean-opt
+    0.00   34.545   55.936                  -                         -       
+    0.75   33.656   55.033     +0.904* [+0.07,+1.73]     +0.890  [+0.71,+1.07]
+    1.00   34.219   55.564     +0.372  [-1.20,+1.94]     +0.326  [+0.03,+0.62]
+
+PRE-REGISTERED VERDICT: CONFIRMED: blend gamma=0.75 beats mean-opt on OOS CVaR with the NB CI strictly positive (+0.904 [+0.07,+1.73]) — first real-workload win.

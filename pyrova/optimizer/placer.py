@@ -90,6 +90,36 @@ def cvar_and_grad(peaks: np.ndarray, alpha: float,
     return val, grad
 
 
+def cvar_jackknife_and_grad(peaks: np.ndarray, alpha: float) -> tuple[float, np.ndarray]:
+    """Jackknife bias-corrected CVaR and its gradient w.r.t. each peak.
+
+    The empirical CVaR is optimistically biased at finite N: minimising it lets
+    the placer exploit sample-tail noise, so the trained placement generalises
+    worse than mean-training (the small-N D*<0 effect). The jackknife estimate
+    CVaR_jk = N*CVaR - (N-1)*mean_i CVaR^(-i) removes the leading O(1/N) bias.
+
+    WARNING: O(N^2) — leave-one-out recomputes the tail N times. Intended for the
+    small-N training regime it targets, not oracle-scale N.
+    """
+    peaks = np.asarray(peaks, dtype=float)
+    n = len(peaks)
+    v_full, g_full = cvar_and_grad(peaks, alpha)
+    if n <= 2:
+        return v_full, g_full
+    v_loo = np.empty(n)
+    g_loo = np.zeros(n)                      # accumulates mean over LOO gradients
+    idx = np.arange(n)
+    for i in range(n):
+        keep = idx != i
+        vi, gi = cvar_and_grad(peaks[keep], alpha)
+        v_loo[i] = vi
+        g_loo[keep] += gi                    # gi is over the n-1 kept points
+    g_loo /= n                               # mean over the N leave-one-out fits
+    val = float(n * v_full - (n - 1) * v_loo.mean())
+    grad = n * g_full - (n - 1) * g_loo
+    return val, grad
+
+
 # Placer
 
 class DiffPlacer:
@@ -320,6 +350,8 @@ class DiffPlacer:
             c_val, d_c = cvar_and_grad(peaks, self.alpha, weights=weights)
             obj_t = (1.0 - g) * mean_val + g * c_val
             d_peaks = (1.0 - g) * d_mean + g * d_c
+        elif mode == "cvar_bc":
+            obj_t, d_peaks = cvar_jackknife_and_grad(peaks, self.alpha)
         else:  # cvar, dro, dro_exact
             obj_t, d_peaks = cvar_and_grad(peaks, self.alpha, weights=weights)
 

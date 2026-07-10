@@ -1,0 +1,11 @@
+exp031 (P11): E1 headlines under legalized evaluation. alpha=0.9, train@18+jitter, 120 it, legal tol 0.1%, testbed=hetero. [full run]
+
+===== hetero-SoC (exp023 E1): 12 blocks, E1 x 5 pairs, N_ORACLE=1000, eval@64 raw+legalized =====
+  pair 0: D*_raw=+0.100  D*_legal=+0.116  (overlap mean 0.88->0.10%, cvar 0.31->0.06%)
+  pair 1: D*_raw=+0.050  D*_legal=+0.049  (overlap mean 0.21->0.08%, cvar 0.69->0.09%)
+  pair 2: D*_raw=+0.078  D*_legal=+0.076  (overlap mean 0.09->0.09%, cvar 0.42->0.08%)
+  pair 3: D*_raw=+0.052  D*_legal=+0.050  (overlap mean 0.02->0.02%, cvar 0.49->0.09%)
+  pair 4: D*_raw=+0.062  D*_legal=+0.067  (overlap mean 0.07->0.07%, cvar 0.91->0.08%)
+  D* raw   = +0.068 [+0.043,+0.094]  (fidelity check vs recorded)
+  D* legal = +0.072 [+0.038,+0.106]  excluded pairs: 0
+  READING: SURVIVES — hetero-SoC (exp023 E1) E1 is not overlap leakage; drop the legality qualifier.

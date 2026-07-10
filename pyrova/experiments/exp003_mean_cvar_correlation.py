@@ -1,40 +1,38 @@
-"""Mechanism test: is there a TRUE tail dimension, and is it learnable at small N?
+"""Mechanism test: does a TRUE tail dimension exist, and is it learnable at small N?
 
-De-confounded successor to the old one-sided gap. review's critique of
-`gap = OOS CVaR(mean-opt) - OOS CVaR(CVaR-opt)` is that it sums two effects that
-have nothing to do with the science: (A) CVaR-opt is scored on the very functional
-it minimised, and (B) at small N it overfits the noisy empirical tail. The sign of
-a single number cannot separate "a true tail dimension exists and is being
-exploited" from "CVaR-opt is simply overfitting."
+De-confounded successor (review) to the old one-sided
+    gap = OOS CVaR(mean-opt) - OOS CVaR(CVaR-opt),
+which sums two effects: (A) CVaR-opt is scored on the very functional it minimised,
+and (B) at small N it overfits the noisy empirical tail — the sign of one number
+cannot separate a true, exploited tail dimension from overfitting. Three reported
+quantities remove both confounds:
 
-This experiment removes both confounds with three reported quantities:
-
-  1. EXISTENCE (overfitting-free). Train a mean-oracle and a CVaR-oracle at a LARGE
-     N_ORACLE so neither overfits, evaluate on a HUGE holdout (OOS ~= true). Then
-       D* = trueCVaR(mean-oracle) - trueCVaR(cvar-oracle)
-     is the population-level benefit of targeting the tail. D* > 0 means a true,
-     separable tail dimension exists at all; D* ~= 0 means minimising the mean
-     already minimises the tail and there is nothing to exploit.
+  1. EXISTENCE (overfitting-free). Train N_OR_SEEDS independent mean-oracle /
+     CVaR-oracle PAIRS at a LARGE N_ORACLE so neither overfits, evaluate on a
+     HUGE holdout (OOS ~= true). Per pair
+       D*_k = trueCVaR(mean-oracle_k) - trueCVaR(cvar-oracle_k)
+     and D* is reported with a paired 95% t-CI across oracle seeds — the
+     nonconvex placer's run-to-run noise a single oracle pair cannot provide.
+     D* CI>0 means a true, separable tail dimension exists; CI spanning 0 means
+     minimising the mean already minimises the tail.
 
   2. SIDE-BY-SIDE (mean, CVaR) at small N. For mean-opt and CVaR-opt trained at
-     N_SMALL, report BOTH out-of-sample mean and CVaR. CVaR-opt lowering CVaR while
-     raising the mean is a genuine mean-for-tail trade; raising both is dominated
-     (pure overfitting). A CVaR-only gap hides which of these is happening.
+     N_SMALL, report BOTH out-of-sample mean and CVaR. Lower CVaR with higher
+     mean is a genuine mean-for-tail trade; higher on both is dominated (pure
+     overfitting).
 
-  3. REGRET to the CVaR-oracle. regret(p) = OOS CVaR(p) - OOS CVaR(cvar-oracle)
-     measures how far each small-N placement is from the best achievable tail. The
-     learnability question is whether the small-N CVaR-opt's regret is below the
-     small-N mean-opt's; if not, the tail dimension exists (D*>0) but is not
-     learnable at this N.
+  3. REGRET to the CVaR-oracle. regret(p) = OOS CVaR(p) - OOS CVaR(cvar-oracle),
+     the distance to the best achievable tail. Learnability = whether small-N
+     CVaR-opt's regret is below small-N mean-opt's; if not, the tail dimension
+     exists (D*>0) but is not learnable at this N.
 
-Part B keeps the gap-free correlation evidence: across placements near the optimum,
-how distinct are mean-dT and CVaR-dT as functions of position (Pearson < 1 => a
-separate, if weak, risk dimension exists).
+Part B (descriptive): correlation of mean-dT vs CVaR-dT across placements near the
+optimum (Pearson < 1 => a separate, if weak, risk dimension exists).
 
 All holdouts are large enough that OOS ~= true, so the across-seed CI reflects
 training (small-N estimator) variance, not scoring noise. i.i.d. synthetic workload
-on ev6 + floorplan2; for the structured-workload analogue see exp005, and for the
-DRO penalty (vs pure CVaR) see exp007.
+on ev6 + floorplan2; structured-workload analogue: exp005; DRO penalty vs pure
+CVaR: exp007.
 """
 
 from __future__ import annotations
@@ -59,11 +57,13 @@ BENCHES = [PKG / "inputs/floorplans/ev6.flp",
 ALPHA = 0.9
 N_SMALL = 32           # small-N regime where the empirical tail is noisy
 N_ORACLE = 1500        # large-N "oracle" training: overfitting-free
+N_OR_SEEDS = 5         # independent oracle pairs: D* gets a CI, not a point estimate
 N_TEST = 4000          # huge holdout so OOS CVaR ~= true CVaR
 NR = NC = 24
 N_ITER = 40
 N_SEEDS = 8
 K_PERTURB = 200
+N_PERTURB_TEST = 1000  # Part B is descriptive; a holdout subsample keeps it cheap
 
 
 def chip_box(units):
@@ -109,22 +109,36 @@ def run(path: Path, cfg, emit) -> dict:
 
     emit(f"\n=== {path.stem} ({n} blocks), alpha={ALPHA} ===")
 
-    # -- (1) EXISTENCE: oracle placements at large N (overfitting-free) -----------
-    rng_or = np.random.default_rng(0)
-    or_train = scen_set(units, tot, rng_or, N_ORACLE)
-    mean_or = trained(solver, units, chip_w, chip_h, or_train, "mean")
-    cvar_or = trained(solver, units, chip_w, chip_h, or_train, "cvar")
-    m_mo, c_mo = oos_mean_cvar(mean_or, test)
-    m_co, c_co = oos_mean_cvar(cvar_or, test)
-    Dstar = c_mo - c_co
-    or_dist = 100.0 * center_distance(mean_or, cvar_or, diag)
-    emit(f"  ORACLE (N={N_ORACLE}):  mean-oracle (OOS mean,CVaR)=({m_mo:.3f},{c_mo:.3f})  "
-         f"cvar-oracle=({m_co:.3f},{c_co:.3f})")
-    emit(f"    D* = trueCVaR(mean-oracle) - trueCVaR(cvar-oracle) = {Dstar:+.3f} K  "
-         f"({'tail dimension EXISTS' if Dstar > 1e-3 else 'no separable tail dimension'})")
-    emit(f"    oracle mean<->CVaR center distance = {or_dist:.2f}% diag")
+    # (1) Existence: independent oracle pairs at large N (overfitting-free).
+    # Oracle RNG streams (10_000+k) are disjoint from the small-N seeds and the
+    # holdout stream; each pair trains on its own fresh N_ORACLE draw.
+    Dk, c_cos, dists = [], [], []
+    or_rows = []
+    for k in range(N_OR_SEEDS):
+        or_train = scen_set(units, tot, np.random.default_rng(10_000 + k), N_ORACLE)
+        mean_or = trained(solver, units, chip_w, chip_h, or_train, "mean")
+        cvar_or = trained(solver, units, chip_w, chip_h, or_train, "cvar")
+        m_mo, c_mo = oos_mean_cvar(mean_or, test)
+        m_co, c_co = oos_mean_cvar(cvar_or, test)
+        Dk.append(c_mo - c_co)
+        c_cos.append(c_co)
+        dists.append(100.0 * center_distance(mean_or, cvar_or, diag))
+        or_rows.append((m_mo, c_mo, m_co, c_co))
+    Dm, _, D_lo, D_hi = ci95_t(Dk)
+    c_ref = float(min(c_cos))            # best achieved tail placement = regret reference
+    verdict = ("tail dimension EXISTS (CI>0)" if D_lo > 0 else
+               "tail dimension NEGATIVE (CI<0)" if D_hi < 0 else
+               "no separable tail dimension (CI spans 0)")
+    emit(f"  ORACLE (N={N_ORACLE}, {N_OR_SEEDS} independent pairs):")
+    for k, (m_mo, c_mo, m_co, c_co) in enumerate(or_rows):
+        emit(f"    pair {k}: mean-oracle (OOS mean,CVaR)=({m_mo:.3f},{c_mo:.3f})  "
+             f"cvar-oracle=({m_co:.3f},{c_co:.3f})  D*_k={Dk[k]:+.3f}")
+    emit(f"    D* = {Dm:+.3f} K CI[{D_lo:+.3f},{D_hi:+.3f}]  ({verdict})")
+    emit(f"    oracle CVaR run-to-run std = {np.std(c_cos, ddof=1):.3f} K "
+         f"(optimizer noise a single-pair D* would hide)")
+    emit(f"    oracle mean<->CVaR center distance = {np.mean(dists):.2f}% diag")
 
-    # -- (2,3) small-N placements: side-by-side (mean,CVaR) and regret-to-oracle ---
+    # (2,3) Small-N placements: side-by-side (mean,CVaR) and regret-to-oracle.
     Mm, Cm, Mc, Cc = [], [], [], []
     last = None
     for seed in range(N_SEEDS):
@@ -139,8 +153,11 @@ def run(path: Path, cfg, emit) -> dict:
     Mm, Cm, Mc, Cc = map(np.asarray, (Mm, Cm, Mc, Cc))
     dmean, _, dm_lo, dm_hi = ci95_t(Mm - Mc)      # >0 => CVaR-opt has higher mean
     dcvar, _, dc_lo, dc_hi = ci95_t(Cm - Cc)      # >0 => CVaR-opt has lower CVaR
-    reg_m, _, rm_lo, rm_hi = ci95_t(Cm - c_co)    # mean-opt regret to cvar-oracle
-    reg_c, _, rc_lo, rc_hi = ci95_t(Cc - c_co)    # cvar-opt regret to cvar-oracle
+    # Regret reference: the best cvar-oracle placement across pairs (a concrete
+    # placement scored on the same holdout). The CI covers small-N training
+    # variance only; the reference's own optimizer noise is the oracle std above.
+    reg_m, _, rm_lo, rm_hi = ci95_t(Cm - c_ref)   # mean-opt regret to best oracle
+    reg_c, _, rc_lo, rc_hi = ci95_t(Cc - c_ref)   # cvar-opt regret to best oracle
 
     emit(f"  SMALL-N (N={N_SMALL}, {N_SEEDS} seeds), OOS averaged on N_TEST={N_TEST}:")
     emit(f"    mean-opt: OOS mean={Mm.mean():.3f}  OOS CVaR={Cm.mean():.3f}")
@@ -153,11 +170,14 @@ def run(path: Path, cfg, emit) -> dict:
             "dominated (overfit): cvar-opt worse on both" if (dmean <= 0 and dcvar <= 0)
             else "mixed")
     emit(f"    -> small-N cvar-opt is: {trade}")
-    emit(f"    regret to cvar-oracle:  mean-opt={reg_m:+.3f} CI[{rm_lo:+.3f},{rm_hi:+.3f}]  "
+    emit(f"    regret to best cvar-oracle:  mean-opt={reg_m:+.3f} CI[{rm_lo:+.3f},{rm_hi:+.3f}]  "
          f"cvar-opt={reg_c:+.3f} CI[{rc_lo:+.3f},{rc_hi:+.3f}]  "
-         f"({'cvar-opt closer' if reg_c < reg_m else 'mean-opt closer'} to the true tail optimum)")
+         f"({'cvar-opt closer' if reg_c < reg_m else 'mean-opt closer'} to the best achieved tail)")
 
-    # -- Part B: correlation of mean-dT vs CVaR-dT across nearby placements -------
+    # Part B: correlation of mean-dT vs CVaR-dT across nearby placements.
+    # Descriptive only (no null is tested: sampling noise alone keeps an
+    # empirical Pearson below 1). Scored on a holdout subsample for speed.
+    part_b_test = test[:N_PERTURB_TEST]
     base_x, base_y = last.raw_x.copy(), last.raw_y.copy()
     rng = np.random.default_rng(123)
     ms, cs = [], []
@@ -165,15 +185,15 @@ def run(path: Path, cfg, emit) -> dict:
         sigma = rng.uniform(0.1, 1.5)
         last.raw_x = base_x + rng.standard_normal(n) * sigma
         last.raw_y = base_y + rng.standard_normal(n) * sigma
-        m, c = oos_mean_cvar(last, test)
+        m, c = oos_mean_cvar(last, part_b_test)
         ms.append(m); cs.append(c)
     last.raw_x, last.raw_y = base_x, base_y
     pear = float(np.corrcoef(ms, cs)[0, 1])
     spear = float(scipy.stats.spearmanr(ms, cs).statistic)
-    emit(f"  across {K_PERTURB} placements: corr(mean-dT, CVaR-dT) "
-         f"Pearson={pear:.4f} Spearman={spear:.4f}  (<1 => a separate risk dimension)")
+    emit(f"  across {K_PERTURB} placements (descriptive, N_TEST={N_PERTURB_TEST}): "
+         f"corr(mean-dT, CVaR-dT) Pearson={pear:.4f} Spearman={spear:.4f}")
 
-    return dict(name=path.stem, Dstar=Dstar, or_dist=or_dist,
+    return dict(name=path.stem, Dstar=Dm, D_lo=D_lo, D_hi=D_hi,
                 dmean=dmean, dcvar=dcvar, reg_m=reg_m, reg_c=reg_c,
                 pearson=pear, spearman=spear)
 
@@ -188,8 +208,8 @@ def main():
 
     emit("Mechanism: TRUE tail dimension (oracle D*) + de-confounded small-N "
          "(mean,CVaR) side-by-side + regret. i.i.d. synthetic workload.")
-    emit(f"alpha={ALPHA}, N_SMALL={N_SMALL}, N_ORACLE={N_ORACLE}, N_TEST={N_TEST}, "
-         f"{N_SEEDS} seeds, grid {NR}x{NC}, {N_ITER} iter.")
+    emit(f"alpha={ALPHA}, N_SMALL={N_SMALL}, N_ORACLE={N_ORACLE} x {N_OR_SEEDS} oracle pairs, "
+         f"N_TEST={N_TEST}, {N_SEEDS} small-N seeds, grid {NR}x{NC}, {N_ITER} iter.")
     emit("Replaces the old one-sided gap = OOS CVaR(mean-opt) - OOS CVaR(CVaR-opt), "
          "which conflated (A) scoring CVaR-opt on its own metric and (B) tail "
          "overfitting; the sign of one number cannot separate them.")

@@ -1,18 +1,15 @@
-"""Does the Wasserstein-DRO penalty earn its keep over pure CVaR at small N?
+"""Does the Wasserstein-DRO penalty improve on pure CVaR at small N?
 
-The missing experiment. Every prior eps-sweep (the retired exp002, eval_dro_benchmarks)
-ran on the i.i.d. workload — exactly the regime where exp004 shows there is no tail
-dimension, so the penalty has nothing to regularise toward. exp005's positive result
-is PURE CVaR (eps=0), not DRO. The Wasserstein penalty has therefore never been
-tested where it could plausibly help: a STRUCTURED workload at SMALL N, where a real
-tail dimension exists but the empirical tail (~N(1-alpha) scenarios) is too noisy for
-pure CVaR to learn without overfitting.
+Prior eps-sweeps (the retired exp002, eval_dro_benchmarks) ran on the i.i.d.
+workload, where exp004 shows there is no tail dimension for the penalty to
+regularise toward; exp005's positive is PURE CVaR (eps=0). This tests the penalty
+in the one regime where it could plausibly help: a STRUCTURED workload at SMALL N,
+where a real tail dimension exists but the empirical tail (~N(1-alpha) scenarios)
+is too noisy for pure CVaR to learn without overfitting.
 
-Hypothesis: on the structured workload at small N, the DRO penalty regularises the
-noisy empirical tail and lets CVaR-opt recover the structured tail signal at a smaller
-N than pure CVaR can. Mechanically, DRO should reduce CVaR-opt's tail overfitting, so
-DRO-opt's OOS CVaR < pure-CVaR-opt's OOS CVaR at small N, with the advantage shrinking
-as N grows and the empirical tail becomes well-estimated.
+Hypothesis: the DRO penalty regularises the noisy empirical tail, so DRO-opt's OOS
+CVaR < pure-CVaR-opt's OOS CVaR at small N, with the advantage shrinking as N grows
+and the empirical tail becomes well-estimated.
 
 Design (de-confounded, review):
   * Two workload arms: STRUCTURED (primary) and i.i.d. (matched NEGATIVE CONTROL —
@@ -21,12 +18,12 @@ Design (de-confounded, review):
   * For every placement, side-by-side (OOS mean, OOS CVaR) on a LARGE holdout
     (OOS ~= true), 5 seeds, 95% CI on paired differences. Three reported deltas:
       vs_mean  = OOS CVaR(mean-opt)    - OOS CVaR(placement)   (>0: beats mean on tail)
-      vs_cvar0 = OOS CVaR(pure-CVaR)   - OOS CVaR(placement)   (>0: DRO beats pure CVaR -- its job)
+      vs_cvar0 = OOS CVaR(pure-CVaR)   - OOS CVaR(placement)   (>0: DRO beats pure CVaR -- the primary test)
       regret   = OOS CVaR(placement)   - OOS CVaR(cvar-oracle) (distance to the achievable tail)
   * cvar-oracle = pure CVaR trained at large N_ORACLE (overfitting-free reference).
 
 Outcomes:
-  - structured vs_cvar0 CI>0 at small N AND i.i.d. vs_cvar0 ~ 0  -> DRO earns its keep
+  - structured vs_cvar0 CI>0 at small N AND i.i.d. vs_cvar0 ~ 0  -> DRO helps
     precisely where there is a noisy tail to regularise (clean positive).
   - both ~ 0  -> penalty inert / eps miscalibrated for this problem scale.
   - structured vs_cvar0 CI<0  -> DRO over-regularises even the real tail.
@@ -61,7 +58,7 @@ N_TEST = 1500                   # large holdout so OOS ~= true
 N_SEEDS = 5
 NR = NC = 18
 N_ITER = 30
-TOTAL_P_IID = None              # set per-bench to 2.0 * n_blocks
+ORACLE_SEED = 555_000           # oracle stream, disjoint from train/test streams
 
 
 def chip_box(units):
@@ -91,11 +88,17 @@ class Arm:
 
 
 class IIDArm(Arm):
+    """Train streams are keyed by (seed, n) in both arms — no nested prefixes
+    across N, no collision with the oracle or test streams."""
+
     def test(self):
         return iid_set(self.units, self.tot, np.random.default_rng(777), N_TEST)
 
     def train(self, seed, n):
-        return iid_set(self.units, self.tot, np.random.default_rng(seed), n)
+        return iid_set(self.units, self.tot, np.random.default_rng(100_000 * seed + n), n)
+
+    def oracle_train(self, n):
+        return iid_set(self.units, self.tot, np.random.default_rng(ORACLE_SEED), n)
 
 
 class StructuredArm(Arm):
@@ -103,7 +106,10 @@ class StructuredArm(Arm):
         return StructuredWorkloadModel(self.units, seed=777).sample(N_TEST)
 
     def train(self, seed, n):
-        return StructuredWorkloadModel(self.units, seed=1000 * seed + n).sample(n)
+        return StructuredWorkloadModel(self.units, seed=100_000 * seed + n).sample(n)
+
+    def oracle_train(self, n):
+        return StructuredWorkloadModel(self.units, seed=ORACLE_SEED).sample(n)
 
 
 def fit(solver, units, chip_w, chip_h, train, mode, eps):
@@ -122,11 +128,10 @@ def run_arm(arm: Arm, solver, chip_w, chip_h, emit):
     units = arm.units
     test = arm.test()
 
-    # Overfitting-free pure-CVaR reference (oracle), once per arm.
-    oracle = fit(solver, units, chip_w, chip_h,
-                 arm.train(0, N_ORACLE) if isinstance(arm, IIDArm)
-                 else StructuredWorkloadModel(units, seed=0).sample(N_ORACLE),
-                 "cvar", 0.0)
+    # Overfitting-free pure-CVaR reference (oracle), once per arm, on its own
+    # RNG stream (a single training run: regret CIs below cover the small-N
+    # placements' variance, not the oracle's own run-to-run noise).
+    oracle = fit(solver, units, chip_w, chip_h, arm.oracle_train(N_ORACLE), "cvar", 0.0)
     _, c_oracle = oos_cvar(oracle, test)
 
     labels = ["mean", "cvar(e0)"] + [f"dro(e{e:g})" for e in EPS_SWEEP]
@@ -153,15 +158,16 @@ def run_arm(arm: Arm, solver, chip_w, chip_h, emit):
         for lab in labels:
             vs_mean = cvars["mean"] - cvars[lab]      # >0: placement beats mean on tail
             vs_cv0 = cvars["cvar(e0)"] - cvars[lab]   # >0: DRO beats pure CVaR
-            regret = float(cvars[lab].mean() - c_oracle)
             gm, _, gm_lo, gm_hi = ci95_t(vs_mean)
             g0, _, g0_lo, g0_hi = ci95_t(vs_cv0)
+            rg, _, rg_lo, rg_hi = ci95_t(cvars[lab] - c_oracle)
             fm = "*" if gm_lo > 0 else ("x" if gm_hi < 0 else " ")
             f0 = "*" if g0_lo > 0 else ("x" if g0_hi < 0 else " ")
+            fr = "*" if rg_lo > 0 else ("x" if rg_hi < 0 else " ")
             vs_mean_s = "    -    " if lab == "mean" else f"{gm:+.2f}{fm}"
             vs_cv0_s = "    -    " if lab in ("mean", "cvar(e0)") else f"{g0:+.2f}{f0}"
             emit(f"    {lab:<11}{means[lab].mean():>9.3f}{cvars[lab].mean():>9.3f}  "
-                 f"{vs_mean_s:>14}  {vs_cv0_s:>14}  {regret:>+8.3f}")
+                 f"{vs_mean_s:>14}  {vs_cv0_s:>14}  {rg:>+8.3f}{fr} [{rg_lo:+.2f},{rg_hi:+.2f}]")
 
 
 def main():
@@ -181,16 +187,22 @@ def main():
     emit(f"DRO vs pure CVaR at small N on ev6 ({len(units)} blocks). "
          f"grid {NR}x{NC}, {N_ITER} iter, eps={EPS_SWEEP}.")
     emit("vs_mean = CVaR(mean-opt) - CVaR(placement) (>0 beats mean on tail).")
-    emit("vs_cvar0 = CVaR(pure-CVaR) - CVaR(placement) (>0 = DRO beats pure CVaR, its job).")
-    emit("regret = CVaR(placement) - CVaR(cvar-oracle) (distance to achievable tail).")
+    emit("vs_cvar0 = CVaR(pure-CVaR) - CVaR(placement) (>0 = DRO beats pure CVaR, the primary test).")
+    emit("regret = CVaR(placement) - CVaR(cvar-oracle), with CI (distance to achievable tail; "
+         "the oracle reference itself is a single run).")
     emit("'*' CI>0, 'x' CI<0 on the paired per-seed difference. STRUCTURED is the test; "
          "IID is the negative control (DRO should not beat pure CVaR there).")
+    emit("LIMITATIONS (a negative verdict is conditional on both): (1) eps values are "
+         "arbitrary — the cross-validation calibration Esfahani-Kuhn Sec 7.2 prescribes has "
+         "not been run; (2) the implemented penalty is the tail-data approximation of the "
+         "dual (~50% of the exact Lipschitz constant on a test placement; see objectives/dro.py) "
+         "— this experiment tests THAT penalty, not the exact dual.")
 
     # Primary arm: structured. Negative control: i.i.d.
     run_arm(StructuredArm("structured", units, tot), solver, chip_w, chip_h, emit)
     run_arm(IIDArm("iid", units, tot), solver, chip_w, chip_h, emit)
 
-    emit("\nReading: DRO earns its keep iff structured vs_cvar0 CI>0 at small N while "
+    emit("\nReading: the DRO penalty helps iff structured vs_cvar0 CI>0 at small N while "
          "the iid control stays ~0. Both ~0 => penalty inert / eps miscalibrated.")
     fh.close()
     print(f"Wrote {out.relative_to(ROOT)}")

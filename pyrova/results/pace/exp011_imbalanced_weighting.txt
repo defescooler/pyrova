@@ -1,0 +1,28 @@
+exp011: imbalanced deployment weighting on the exp009 BOOM setup (80 programs, 27 blocks, config 0, grid 18x18, alpha=0.9, 10 splits of 40/40).
+Weights: category-level from published telemetry (see script docstring), uniform within category; rv64* ISA tests weight 0 in deployment schemes.
+
+(1) Scheme statistics (gate: concentration top10>0.7 or gini>0.5):
+  idle-proxy check: hello_world = 6.07 W (median 5.11 W), peak-dT rank 30/80 -> INVALID as idle proxy (above-median power)
+  idle-proxy check: hello_world_large = 6.29 W (median 5.11 W), peak-dT rank 26/80 -> INVALID as idle proxy (above-median power)
+  uniform-control    top10=0.125 gini=0.000 w-corr(FP,INT)=-0.287 w-corr(FP,MEM)=-0.102
+    tail@alpha=0.9 (8 members): bubblesort:0.13, bsort:0.13, mergesort:0.13, ndes:0.13, rsort:0.13, edn:0.13 ...
+  A borg2019-dc      top10=0.250 gini=0.396 w-corr(FP,INT)=-0.400 w-corr(FP,MEM)=-0.208
+    tail@alpha=0.9 (5 members): bubblesort:0.25, bsort:0.25, mergesort:0.25, ndes:0.14, rsort:0.11
+  B mobile-falaki    top10=0.971 gini=0.954 w-corr(FP,INT)=-0.173 w-corr(FP,MEM)=-0.141
+    tail@alpha=0.9 (22 members): bubblesort:0.01, bsort:0.01, mergesort:0.01, ndes:0.00, rsort:0.01, edn:0.00 ...  [WARNING: single-benchmark tail mass >0.3: ['hello_world_large']]
+  C mobile-carroll   top10=0.921 gini=0.928 w-corr(FP,INT)=-0.053 w-corr(FP,MEM)=-0.013
+    tail@alpha=0.9 (16 members): bubblesort:0.02, bsort:0.02, mergesort:0.02, ndes:0.03, rsort:0.02, edn:0.03 ...  [WARNING: single-benchmark tail mass >0.3: ['hello_world_large']]
+
+(2) PLACEMENT: dCVaR/dMean = (mean-opt) - (cvar-opt), weighted OOS, 10 splits, 95% t-CI:
+  uniform-control    dCVaR=+0.450 K CI[-2.170,+3.071] ns  dMean=+0.135 K CI[-0.962,+1.231]
+  A borg2019-dc      dCVaR=+0.721 K CI[-0.124,+1.566] ns  dMean=+0.269 K CI[-0.481,+1.020]
+  B mobile-falaki    dCVaR=+0.474 K CI[-0.160,+1.108] ns  dMean=+0.128 K CI[-0.160,+0.416]
+  C mobile-carroll   dCVaR=+1.574 K CI[+0.494,+2.655] *   dMean=+0.124 K CI[-0.065,+0.312]
+
+(3) VERDICT vs the pre-registered prediction:
+  (a) weighted-corr(FP,INT) < -0.1 in 2/3 schemes -> CONFIRMED
+  (b) concentrated schemes ['B mobile-falaki', 'C mobile-carroll']; dCVaR CI>0 in ['C mobile-carroll'] -> CONFIRMED — BUT the pre-registered tail diagnostic fired on ['C mobile-carroll']: per the brief's reduction rule, those positives reduce to 'CVaR-opt optimizes for the specific high-weight tail benchmarks'.
+  (c) uniform-control dCVaR=+0.450 CI[-2.170,+3.071] -> null reproduced (pipeline valid)
+  OVERALL: CONFIRMED-WITH-REDUCTION: the CI criterion passed on C mobile-carroll, but every confirming arm trips the pre-registered tail-domination diagnostic, and the idle proxy is thermally invalid (above-median power). Defensible claim: when deployment weight concentrates on a few scenarios, weighted-CVaR placement beats weighted-mean placement OOS — a scenario-coverage effect (CVaR-opt dominates BOTH metrics), decoupled from the anti-correlation mechanism (largest positive occurs in scheme C where the weighted structure is destroyed, w-corr(FP,INT)=-0.05). NOT the theory's mean-for-tail trade; NOT evidence the exp009 mechanism-null is wrong.
+
+Caveats: geometry synthesised from McPAT areas (exp009 caveat carries over); benchmark-level weights are category-sourced + uniform-within-category, not measured benchmark telemetry; hello_world* used as idle proxies turned out to be ABOVE-median power (see idle-proxy check above) — B/C represent weight concentration, not idle-dominated deployments; a true near-zero idle scenario would need a new pre-registered run.

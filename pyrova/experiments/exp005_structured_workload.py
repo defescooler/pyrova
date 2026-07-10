@@ -3,25 +3,21 @@
 exp004 on the STRUCTURED workload (5-mode CPU mixture with anti-correlated FP/INT/MEM
 clusters; see workloads/structured.py). The anti-correlation creates a genuine,
 separable tail dimension that minimising the mean does not capture, so here CVaR-opt
-can beat mean-opt once the tail is learnable. The N_train curve REVERSES positive
+can beat mean-opt once the tail is learnable: the N_train curve REVERSES positive
 rather than merely closing to parity (the i.i.d. case, exp004).
 
-IMPORTANT — this experiment tests mean-opt vs PURE CVaR-opt (eps=0). The positive
-result is therefore evidence that *a tail dimension exists and pure CVaR can learn
-it under structure*, NOT that the Wasserstein-DRO penalty helps. The DRO penalty
-(DRO-opt vs pure-CVaR-opt, where regularising the noisy tail should let CVaR find the
-signal at smaller N) is tested separately in exp007. Do not re-label this as a DRO
-result.
+IMPORTANT — this experiment tests mean-opt vs PURE CVaR-opt (eps=0). A positive is
+evidence that *a tail dimension exists and pure CVaR can learn it under structure*,
+NOT that the Wasserstein-DRO penalty helps; the DRO penalty is tested separately in
+exp007. Do not re-label this as a DRO result.
 
-Caveat (stated plainly): the structured workload is hand-designed to contain exactly
-the anti-correlation the theory needs, so this proves "structure suffices," not that
+Caveat: the structured workload is hand-designed to contain exactly the
+anti-correlation the theory needs, so this proves "structure suffices," not that
 real workloads have it. exp006 is the real-trace probe.
 
-De-confounded metric (review), identical to exp004: each cell reports
-    dCVaR = OOS CVaR(mean-opt) - OOS CVaR(CVaR-opt)   (>0 => CVaR-opt lower tail)
-    dMean = OOS mean(mean-opt) - OOS mean(CVaR-opt)   (<0 => CVaR-opt pays mean)
-on a large holdout (OOS ~= true). dCVaR>0 with dMean<0 is the signature of a real
-mean-for-tail trade; the old one-sided gap could not separate that from overfitting.
+Metric: de-confounded dCVaR/dMean cells (= mean-opt minus CVaR-opt) on a large
+holdout, identical to exp004 (definitions and reading rule there); dCVaR>0 with
+dMean<0 is the mean-for-tail signature.
 """
 
 from __future__ import annotations
@@ -37,7 +33,7 @@ sys.path.insert(0, str(ROOT))
 
 from pyrova.thermal.fd_solver import GridFDSolver, parse_flp, parse_config
 from pyrova.optimizer.placer import DiffPlacer
-from pyrova.evaluation.metrics import mean_cvar, ci95_t
+from pyrova.evaluation.metrics import mean_cvar, ci95_t, paired_t_p, holm
 from pyrova.workloads.structured import StructuredWorkloadModel
 
 FLP = PKG / "inputs/floorplans/ev6.flp"
@@ -65,7 +61,10 @@ def deltas_at(solver, units, chip_w, chip_h, n_train, alpha):
     """(dCVaR, dMean) with 95% CIs across seeds. dX = mean-opt minus CVaR-opt."""
     dC, dM = [], []
     for seed in range(N_SEEDS):
-        model = StructuredWorkloadModel(units, seed=1000 * seed + n_train)
+        # alpha enters the seed so the alpha columns of a row are independent
+        # draws rather than one draw presented as three corroborating cells.
+        model = StructuredWorkloadModel(
+            units, seed=100_000 * seed + 100 * n_train + int(round(alpha * 100)))
         train = model.sample(n_train)
         test = model.sample(N_TEST)
         p_mean = DiffPlacer(solver, units, chip_w, chip_h, NR, NC, alpha=alpha)
@@ -77,7 +76,7 @@ def deltas_at(solver, units, chip_w, chip_h, n_train, alpha):
         dC.append(cm - cc); dM.append(mm - mc)
     gc, _, c_lo, c_hi = ci95_t(dC)
     gm, _, m_lo, m_hi = ci95_t(dM)
-    return gc, c_lo, c_hi, gm, m_lo, m_hi
+    return gc, c_lo, c_hi, gm, m_lo, m_hi, paired_t_p(dC)
 
 
 def cell(gc, c_lo, c_hi, gm) -> str:
@@ -107,20 +106,33 @@ def main():
     emit("read together: dCVaR>0 & dMean<0 = genuine mean-for-tail trade (real tail dimension).")
     emit(f"  {'N_TRAIN':>8} | " + " ".join(f"a={a:<11.2f}" for a in ALPHAS))
     emit("  " + "-" * (10 + 14 * len(ALPHAS)))
-    any_support = False
+    rows = []
     for nt in N_TRAINS:
         cells = []
         for a in ALPHAS:
-            gc, c_lo, c_hi, gm, m_lo, m_hi = deltas_at(solver, units, chip_w, chip_h, nt, a)
+            gc, c_lo, c_hi, gm, m_lo, m_hi, p_c = deltas_at(solver, units, chip_w, chip_h, nt, a)
             cells.append(f"{cell(gc, c_lo, c_hi, gm):>13}")
-            any_support = any_support or (c_lo > 0)
-            fh.write(f"    # N_TRAIN={nt} a={a}: dCVaR={gc:+.3f} CI[{c_lo:+.3f},{c_hi:+.3f}]  "
-                     f"dMean={gm:+.3f} CI[{m_lo:+.3f},{m_hi:+.3f}]\n")
+            rows.append(dict(nt=nt, a=a, gc=gc, lo=c_lo, gm=gm, p=p_c))
+            fh.write(f"    # N_TRAIN={nt} a={a}: dCVaR={gc:+.3f} CI[{c_lo:+.3f},{c_hi:+.3f}] "
+                     f"p={p_c:.4f}  dMean={gm:+.3f} CI[{m_lo:+.3f},{m_hi:+.3f}]\n")
         emit(f"  {nt:>8} | " + " ".join(cells))
 
-    emit(f"\nVerdict (pure CVaR, not DRO): tail dimension "
-         f"{'SUPPORTED in >=1 cell (dCVaR CI>0)' if any_support else 'NOT supported anywhere'} "
-         f"under the structured workload.")
+    # Verdict with familywise control: a '>=1 of 15 cells' criterion has ~54%
+    # false-positive probability under the global null and is not evidence.
+    keep = holm([r["p"] for r in rows])
+    sig_pos = [r for r, k in zip(rows, keep) if k and r["gc"] > 0]
+    trade = [r for r in sig_pos if r["gm"] < 0]
+    if trade:
+        lab = ", ".join(f"N={r['nt']},a={r['a']}({r['gc']:+.2f})" for r in trade)
+        emit(f"\nVerdict (pure CVaR, not DRO): mean-for-tail trade SUPPORTED after "
+             f"Holm correction ({len(rows)} cells) in: {lab}")
+    elif sig_pos:
+        lab = ", ".join(f"N={r['nt']},a={r['a']}" for r in sig_pos)
+        emit(f"\nVerdict (pure CVaR, not DRO): dCVaR>0 survives Holm in {lab}, "
+             f"but without dMean<0 — not the mean-for-tail signature.")
+    else:
+        emit(f"\nVerdict (pure CVaR, not DRO): NO cell survives Holm correction "
+             f"({len(rows)} cells) — tail dimension not supported at this power.")
     fh.close()
     print(f"Wrote {out.relative_to(ROOT)}")
 

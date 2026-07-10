@@ -1,0 +1,19 @@
+BOOM real-trace test: 80 programs, 27 blocks, config 0, grid 18x18, alpha=0.9.
+power leaf-coverage of Core = 0.985 (no double-count); chip 1.78x1.48 mm (areas from McPAT, layout synthesised).
+
+(1) REAL cross-program structure (data-only, robust):
+    corr(FP,INT)=-0.287  corr(FP,MEM)=-0.102  corr(INT,MEM)=+0.293   total-power CV=0.257
+    config 1: corr(FP,INT)=-0.289  corr(FP,MEM)=-0.106  corr(INT,MEM)=+0.292  CV=0.257  (same smallboom areas — power only)
+    config 2: corr(FP,INT)=-0.293  corr(FP,MEM)=-0.105  corr(INT,MEM)=+0.270  CV=0.257  (same smallboom areas — power only)
+    vs gcc single-program (exp006): corr(FP,MEM)=+0.64 corr(FP,INT)=+0.71 CV=0.057
+    vs exp005 hand-designed: corr(FP,MEM)=-0.35 corr(FP,INT)=-0.28
+    -> real workloads DO show anti-correlated functional clusters (FP/INT, FP/MEM) — the structure the theory needs (gcc was the wrong, single-program test).
+    mechanism: FP cluster carries 1.5% of total power (max 16.6% in any program); hotspot cell is identical in 50/80 programs at the original layout (30 programs move it).
+
+(2) PLACEMENT (geometry-contingent), disjoint 40/40, 10 repeated random splits of ONE 80-program pool:
+    CI = Nadeau-Bengio-corrected t (repeated splits share data; a naive across-split t-CI would be ~3.3x too narrow).
+    dCVaR = OOS CVaR(mean-opt) - CVaR(cvar-opt) = +0.450 K  CI[-2.170,+3.071]  ns
+    dMean = +0.135 K  CI[-0.962,+1.231]
+    -> no significant benefit (CI spans 0). Consistent with the measured mechanism above: FP carries ~1.5% of power and the hotspot moves in only 30/80 programs, so the anti-correlation has little thermal leverage.
+    POWER CAVEAT: OOS CVaR at alpha=0.9 on a 40-program test set averages the top ~3 programs — far below the N_TEST>=1500 the synthetic experiments use; with 80 real programs this is the best available, so treat (2) as low-powered, not as a precise null.
+    NOTE: layout synthesised from McPAT areas; treat (2) as geometry-contingent, (1) as robust.

@@ -1,0 +1,8 @@
+budget ladder, floorplan2 only. budgets=[40, 120], N_OR_PAIRS=2, N_ORACLE=64.
+
+=== floorplan2 (18 blocks), alpha=0.9, grid 24^2, N_ORACLE=64, 2 paired pairs ===
+  D*( 40 it) = -0.564 K CI[-1.525,+0.398]
+  D*(120 it) = -1.051 K CI[-3.006,+0.903]
+  paired dD*(120 vs 40) = -0.488 K CI[-3.403,+2.428]  (>0 => the deficit closes with budget)
+  closure at 120 it: -87% of the 40-it deficit (paired CI on dD* above is the inferential statement)
+  VERDICT: NO EFFECT TO EXPLAIN on floorplan2: D*(40) CI already includes 0 (no reproduced negative here).

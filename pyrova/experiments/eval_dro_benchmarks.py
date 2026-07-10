@@ -179,7 +179,7 @@ def main():
         print(f"  {p.relative_to(ROOT)}")
     print(f"\neps-sweep, out-of-sample CVaR averaged over {N_SEEDS} seeds "
           f"(alpha={ALPHA}, grid {NR}x{NC}, {N_ITER} iter, synthetic workload).")
-    print("vs_mean>0: beats mean placement.  vs_cvar0>0: DRO beats pure CVaR (its job).")
+    print("vs_mean>0: beats mean placement.  vs_cvar0>0: DRO beats pure CVaR (the primary test).")
 
     out = PKG / "results/eval_dro_benchmarks.txt"
     with open(out, "w") as f:

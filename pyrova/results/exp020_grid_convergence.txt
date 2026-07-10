@@ -1,0 +1,8 @@
+exp020: grid-convergence of the structured mean-for-tail trade. N_TRAIN=128, alpha=0.95, 5 seeds, 30 iter; train at [18, 24, 30], evaluate ALL at 64x64 (our solver, reference-validated to 2.8 mK), N_TEST=500.
+dCVaR(R) = CVaR(mean-opt@R) - CVaR(cvar-opt@R), both evaluated at 64^2; paired t-CIs across seeds.
+
+  train@18 -> eval@64: dCVaR=-1.612x [-2.581,-0.643] p=0.0099
+  train@24 -> eval@64: dCVaR=-0.040  [-0.255,+0.175] p=0.6293
+  train@30 -> eval@64: dCVaR=+0.072  [-0.113,+0.257] p=0.3395
+
+PRE-REGISTERED VERDICT: INCONCLUSIVE at this power: the transfer curve is reported above; extend seeds or training resolution before any wording change.

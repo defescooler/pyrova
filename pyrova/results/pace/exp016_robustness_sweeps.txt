@@ -1,0 +1,15 @@
+exp016-G: exp005 survivor (structured, N=128, alpha=0.95) at grids [18, 24, 30], 5 seeds, 30 iter, N_TEST=1500.
+  grid 18x18: dCVaR=+0.591* [+0.420,+0.762]  dMean=-1.913
+  grid 24x24: dCVaR=+0.332  [-0.228,+0.891]  dMean=-1.489
+  grid 30x30: dCVaR=+0.510* [+0.037,+0.982]  dMean=-1.910
+  G VERDICT: STABLE — dCVaR>0 at every grid; the structured positive is grid-robust.
+
+exp016-L: BOOM blend gamma=0.75 vs mean, 120 iter, lr sweep [0.005, 0.02] (ncol=6, exp015 splits).
+  [L lr=0.005] dCVaR=+1.410* [+0.38,+2.44]  dMean=+0.895* [+0.78,+1.01]
+  [L lr=0.02] dCVaR=+2.437* [+0.10,+4.77]  dMean=+1.717* [+1.09,+2.34]
+  L VERDICT: domination at BOTH lr — the blend objective's advantage is real optimisation behaviour, not an lr artifact; mechanism still open.
+
+exp016-Y: BOOM blend vs mean at synthesised layouts ncol [4, 8] (plus ncol=6 from sweep L at lr=2e-2), 120 iter, lr=2e-2.
+  [Y ncol=4] dCVaR=+1.064  [-0.64,+2.77]  dMean=-0.364  [-0.98,+0.25]
+  [Y ncol=8] dCVaR=-0.362  [-2.22,+1.49]  dMean=-0.614x [-1.20,-0.03]
+  Y VERDICT: geometry-robust — dCVaR>0 in 2/3 layouts, CI>0 in 1.

@@ -9,7 +9,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-# -- Paths -------------------------------------------------------------------
+# Paths
 HERE = Path(__file__).resolve().parent          # pyrova/experiments
 PKG  = HERE.parent                               # pyrova
 REPO = PKG.parent                                # repo root (has the package)
@@ -24,7 +24,7 @@ from pyrova.core.design import Design
 from pyrova.objectives.thermal import peak_temperature
 from pyrova.optimizer.placer import DiffPlacer
 
-# -- Parameters ----------------------------------------------------------------
+# Parameters
 N_WORKLOADS = 6        # number of workloads xi^j (= number of placements p^j)
 N_ITER      = 40       # Adam iterations per single-workload optimisation
 LR          = 1e-2
@@ -89,7 +89,7 @@ def main() -> None:
     for i in range(N_WORKLOADS):
         print(f"  p^{i}: {worst_regret[i]:.2f} K")
 
-    # -- Plots -----------------------------------------------------------------
+    # Plots
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
 
     ax = axes[0]
@@ -118,7 +118,7 @@ def main() -> None:
     plt.close(fig)
     print(f"\nPlot -> {png}")
 
-    # -- Numeric summary -------------------------------------------------------
+    # Numeric summary
     txt = RESULTS / "exp001_sensitivity.txt"
     with open(txt, "w") as f:
         f.write("exp001 - workload sensitivity (cross-performance)\n")

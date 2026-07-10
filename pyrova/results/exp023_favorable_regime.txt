@@ -1,0 +1,25 @@
+exp023: favorable-regime test on the stylised hetero-SoC (12 blocks, chip 11.0x13.0 mm). alpha=0.9; train@18 + raster_jitter=1.0; eval@64; 120 it; mean arm best-of-3.
+regime stats: E[total]=16.7 W  total-CV=0.567  heaviest-engine share=22%
+  mode game     : hotspot near GPU_0
+  mode ml_infer : hotspot near NPU
+  mode compile  : hotspot near CPU_P1
+  mode video    : hotspot near MediaEng
+  mode camera   : hotspot near ISP
+  mode idle     : hotspot near CPU_E
+GATE: hotspot spans 6 distinct blocks across modes (requires >= 3) -> PASS
+
+E1: oracle D*, N_ORACLE=1000, 5 pairs, eval on common 1000-scenario holdout at 64^2:
+  pair 0: D*_k = +0.100 K
+  pair 1: D*_k = +0.050 K
+  pair 2: D*_k = +0.078 K
+  pair 3: D*_k = +0.052 K
+  pair 4: D*_k = +0.062 K
+  D* = +0.068 K CI[+0.043,+0.094]
+
+E2: learnability vs mean-strong (bo3), 5 seeds:
+  N=32 cvar : dCVaR=+0.051* [+0.023,+0.079]  dMean=-0.021 [-0.046,+0.004]
+  N=32 blend: dCVaR=+0.041* [+0.017,+0.064]  dMean=+0.003 [-0.007,+0.013]
+  N=128 cvar : dCVaR=+0.061* [+0.017,+0.106]  dMean=-0.016 [-0.036,+0.004]
+  N=128 blend: dCVaR=+0.052* [+0.011,+0.092]  dMean=+0.005 [-0.005,+0.016]
+
+PRE-REGISTERED VERDICT: PAYS: in its mechanism-favorable regime, risk-aware placement buys +0.068 K CI[+0.04,+0.09] of true tail (oracle) and the trade is learnable vs a strong baseline at [(32, 'cvar'), (128, 'cvar')] — an existence/upper-bound result for heavy-anti-correlated multimodal workloads.

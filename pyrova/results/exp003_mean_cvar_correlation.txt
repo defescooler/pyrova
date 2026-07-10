@@ -1,0 +1,41 @@
+Mechanism: TRUE tail dimension (oracle D*) + de-confounded small-N (mean,CVaR) side-by-side + regret. i.i.d. synthetic workload.
+alpha=0.9, N_SMALL=32, N_ORACLE=1500 x 5 oracle pairs, N_TEST=4000, 8 small-N seeds, grid 24x24, 40 iter.
+Replaces the old one-sided gap = OOS CVaR(mean-opt) - OOS CVaR(CVaR-opt), which conflated (A) scoring CVaR-opt on its own metric and (B) tail overfitting; the sign of one number cannot separate them.
+
+=== ev6 (30 blocks), alpha=0.9 ===
+  ORACLE (N=1500, 5 independent pairs):
+    pair 0: mean-oracle (OOS mean,CVaR)=(23.094,37.992)  cvar-oracle=(23.328,38.043)  D*_k=-0.051
+    pair 1: mean-oracle (OOS mean,CVaR)=(23.100,38.022)  cvar-oracle=(23.547,38.279)  D*_k=-0.257
+    pair 2: mean-oracle (OOS mean,CVaR)=(23.085,37.961)  cvar-oracle=(23.400,38.031)  D*_k=-0.070
+    pair 3: mean-oracle (OOS mean,CVaR)=(23.117,37.975)  cvar-oracle=(23.372,38.041)  D*_k=-0.067
+    pair 4: mean-oracle (OOS mean,CVaR)=(23.082,38.003)  cvar-oracle=(23.470,38.191)  D*_k=-0.188
+    D* = -0.127 K CI[-0.240,-0.013]  (tail dimension NEGATIVE (CI<0))
+    oracle CVaR run-to-run std = 0.112 K (optimizer noise a single-pair D* would hide)
+    oracle mean<->CVaR center distance = 1.19% diag
+  SMALL-N (N=32, 8 seeds), OOS averaged on N_TEST=4000:
+    mean-opt: OOS mean=23.634  OOS CVaR=38.691
+    cvar-opt: OOS mean=24.412  OOS CVaR=39.827
+    dMean (mean-opt - cvar-opt) = -0.779 K CI[-1.005,-0.552]  (<0 => cvar-opt pays mean)
+    dCVaR (mean-opt - cvar-opt) = -1.136 K CI[-1.405,-0.867]  (>0 => cvar-opt buys tail)
+    -> small-N cvar-opt is: dominated (overfit): cvar-opt worse on both
+    regret to best cvar-oracle:  mean-opt=+0.660 CI[+0.495,+0.826]  cvar-opt=+1.796 CI[+1.454,+2.138]  (mean-opt closer to the best achieved tail)
+  across 200 placements (descriptive, N_TEST=1000): corr(mean-dT, CVaR-dT) Pearson=0.9059 Spearman=0.8815
+
+=== floorplan2 (18 blocks), alpha=0.9 ===
+  ORACLE (N=1500, 5 independent pairs):
+    pair 0: mean-oracle (OOS mean,CVaR)=(13.723,22.821)  cvar-oracle=(13.767,22.795)  D*_k=+0.026
+    pair 1: mean-oracle (OOS mean,CVaR)=(13.743,22.853)  cvar-oracle=(13.786,22.841)  D*_k=+0.012
+    pair 2: mean-oracle (OOS mean,CVaR)=(13.728,22.813)  cvar-oracle=(13.788,22.854)  D*_k=-0.041
+    pair 3: mean-oracle (OOS mean,CVaR)=(13.742,22.838)  cvar-oracle=(13.778,22.808)  D*_k=+0.030
+    pair 4: mean-oracle (OOS mean,CVaR)=(13.731,22.833)  cvar-oracle=(13.753,22.815)  D*_k=+0.018
+    D* = +0.009 K CI[-0.027,+0.045]  (no separable tail dimension (CI spans 0))
+    oracle CVaR run-to-run std = 0.024 K (optimizer noise a single-pair D* would hide)
+    oracle mean<->CVaR center distance = 0.64% diag
+  SMALL-N (N=32, 8 seeds), OOS averaged on N_TEST=4000:
+    mean-opt: OOS mean=13.918  OOS CVaR=23.113
+    cvar-opt: OOS mean=14.266  OOS CVaR=23.653
+    dMean (mean-opt - cvar-opt) = -0.348 K CI[-0.413,-0.282]  (<0 => cvar-opt pays mean)
+    dCVaR (mean-opt - cvar-opt) = -0.541 K CI[-0.641,-0.441]  (>0 => cvar-opt buys tail)
+    -> small-N cvar-opt is: dominated (overfit): cvar-opt worse on both
+    regret to best cvar-oracle:  mean-opt=+0.318 CI[+0.256,+0.379]  cvar-opt=+0.858 CI[+0.743,+0.974]  (mean-opt closer to the best achieved tail)
+  across 200 placements (descriptive, N_TEST=1000): corr(mean-dT, CVaR-dT) Pearson=0.9340 Spearman=0.9204

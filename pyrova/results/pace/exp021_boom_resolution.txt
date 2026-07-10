@@ -1,0 +1,21 @@
+exp021: BOOM resolution check. 10 fresh splits (base 95000), 60/20, alpha=0.9; arms trained@18 (mean-std/mean-strong bo3x240/blend) and @36 (mean-std/blend); eval@(18, 64).
+
+  OOS CVaR by arm and evaluation grid (mean over 10 splits):
+     arm eval@18   eval@64  
+    ms18   54.403   59.342
+    mS18   52.248   57.625
+    bl18   52.534   57.429
+    ms36   60.267   58.902
+    bl36   59.296   58.053
+
+  R1/R2 (blend vs mean-strong, trained@18):
+    eval@18: dCVaR(mean-strong - blend) = -0.287 [-5.99,+5.42]
+    eval@64: dCVaR(mean-strong - blend) = +0.196 [-5.27,+5.66]
+    R1 (equalised null resolution-stable): SURVIVES
+    R2 (efficiency observation): SURVIVES
+
+  R3 (training resolution, eval@64):
+    ms18->(ms36): gain from 36^2 training = +0.440 [-0.56,+1.44]
+    bl18->(bl36): gain from 36^2 training = -0.625 [-1.29,+0.04]
+
+  P5 SKIPPED (reference binary not present on this host).

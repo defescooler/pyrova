@@ -1,0 +1,13 @@
+exp028: i.i.d. oracle D* vs optimizer BUDGET (the exp013/exp015 pivot, properly powered). Isolates budget: exp003's setup exactly, only n_iter and pair-count change. [full run]
+budgets=[40, 120, 240], N_OR_PAIRS=12, N_ORACLE=1500, N_TEST=4000, grid=24^2, alpha=0.9.
+
+=== ev6 (30 blocks), alpha=0.9, grid 24^2, N_ORACLE=1500, 12 paired pairs ===
+  D*( 40 it) = -0.086 K CI[-0.129,-0.043]
+  D*(120 it) = -0.072 K CI[-0.120,-0.023]
+  D*(240 it) = -0.054 K CI[-0.079,-0.029]
+  paired dD*(120 vs 40) = +0.014 K CI[-0.033,+0.061]  (>0 => the deficit closes with budget)
+  paired dD*(240 vs 40) = +0.032 K CI[-0.003,+0.067]  (>0 => the deficit closes with budget)
+  closure at 240 it: 37% of the 40-it deficit (paired CI on dD* above is the inferential statement)
+  VERDICT: STRUCTURAL / OPEN on ev6: D*(240) CI still < 0 after 240 iters -- budget does not close it; not (only) convergence speed. Investigate estimator variance / pathology.
+
+=== floorplan2 (18 blocks), alpha=0.9, grid 24^2, N_ORACLE=1500, 12 paired pairs ===

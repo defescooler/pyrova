@@ -32,7 +32,14 @@ MODE_PROBS = {"idle": 0.15, "compute_fp": 0.25, "compute_int": 0.25,
 
 
 class StructuredWorkloadModel:
-    """Sample power scenarios from a mixture of CPU operating modes."""
+    """Sample power scenarios from a mixture of CPU operating modes.
+
+    NOTE: ``total_power`` is the hypothetical all-units-at-full-activity total;
+    modes scale it down, so the realised E[total] is much lower (~0.37x with the
+    default modes, i.e. ~41 W for total_power=110). Nothing downstream depends
+    on the absolute level (peaks are compared across arms at fixed workload),
+    but do not read ``total_power`` as the mean chip power.
+    """
 
     def __init__(self, units: list[dict], total_power: float = 110.0,
                  seed: int = 0, noise: float = 0.12):
@@ -61,3 +68,164 @@ class StructuredWorkloadModel:
             p = p * (1.0 + self.rng.uniform(-self.noise, self.noise, size=len(p)))
             out.append(p)
         return out
+
+
+class CorrelatedWorkloadModel:
+    """Discrete-mode workload sampler with a cross-cluster correlation knob `mix` in [0,1].
+
+    Mode-based (like `StructuredWorkloadModel`) so the CVaR tail is a sharp, learnable
+    hotspot rather than the noise-dominated tail of a continuous model. Two mode families:
+
+      * CONTRAST (mix=0): one functional cluster hot at a time -> FP/INT/MEM activity
+        ANTI-correlate -> the hotspot moves between clusters across scenarios -> placement
+        has tail leverage (the exp005 regime where CVaR beats the mean).
+      * COMMON (mix=1): all clusters rise/fall together -> POSITIVELY correlated (gcc-like)
+        -> the hotspot location is stable -> no separable tail dimension.
+
+    `mix` is the probability of drawing from COMMON, so it interpolates the realized
+    cross-cluster correlation from strongly negative (mix=0) to positive (mix=1). The scale
+    is fixed per `mix` so E[total] ~= total_power across the sweep. Realized correlation
+    is MEASURED, not assumed. Drives exp008.
+
+    KNOWN CONFOUND (report alongside any sweep over `mix`): only the MEAN total
+    power is matched across mixes. The total-power CV rises strongly with `mix`
+    (anti-correlated modes nearly cancel in the total; co-activated modes swing
+    it), and the mean per-scenario hot-block power falls as `mix` rises. Part of
+    this coupling is mathematically intrinsic to changing cross-cluster
+    correlation at fixed marginal activity, so a `mix` sweep is a sweep over
+    mode-family composition, NOT over correlation in isolation. Use
+    ``mix_stats`` to measure and report the confounded quantities per mix.
+    """
+
+    # one cluster hot at a time -> functional clusters anti-correlate
+    CONTRAST = (
+        {"FP": 1.00, "INT": 0.20, "MEM": 0.10, "CTRL": 0.30},
+        {"FP": 0.20, "INT": 1.00, "MEM": 0.10, "CTRL": 0.30},
+        {"FP": 0.10, "INT": 0.20, "MEM": 1.00, "CTRL": 0.30},
+    )
+    # clusters rise/fall together -> positive correlation
+    COMMON = (
+        {"FP": 1.00, "INT": 1.00, "MEM": 1.00, "CTRL": 0.50},
+        {"FP": 0.12, "INT": 0.12, "MEM": 0.12, "CTRL": 0.10},
+    )
+    FAMS = ("FP", "INT", "MEM", "CTRL")
+
+    def __init__(self, units: list[dict], mix: float, total_power: float = 110.0,
+                 seed: int = 0, noise: float = 0.12):
+        self.units = units
+        self.mix = float(np.clip(mix, 0.0, 1.0))
+        self.noise = noise
+        self.rng = np.random.default_rng(seed)
+        self.families = [_family(u["name"]) for u in units]
+        areas = np.array([u["width"] * u["height"] for u in units])
+        self.weight = np.array([DENSITY[f] for f in self.families]) * areas
+        # Fixed scale so E[total] ~= total_power at this mix (mean activity over the mode set
+        # that mix selects), isolating the correlation knob from the overall power level.
+        mc = {f: float(np.mean([m[f] for m in self.COMMON])) for f in self.FAMS}
+        mk = {f: float(np.mean([m[f] for m in self.CONTRAST])) for f in self.FAMS}
+        e_act = np.array([self.mix * mc[f] + (1.0 - self.mix) * mk[f] for f in self.families])
+        self.scale = total_power / float((e_act * self.weight).sum())
+
+    def _mode_power(self, mode: dict) -> np.ndarray:
+        a = np.array([mode[f] for f in self.families])
+        return a * self.weight * self.scale
+
+    def sample(self, n: int) -> list[np.ndarray]:
+        """Return n power arrays (units order), same format as random_power_map."""
+        out = []
+        for _ in range(n):
+            if self.rng.random() < self.mix:
+                mode = self.COMMON[self.rng.integers(len(self.COMMON))]
+            else:
+                mode = self.CONTRAST[self.rng.integers(len(self.CONTRAST))]
+            p = self._mode_power(mode)
+            p = p * (1.0 + self.rng.uniform(-self.noise, self.noise, size=len(p)))
+            out.append(p)
+        return out
+
+    def mix_stats(self, n: int = 4000, seed: int = 12345) -> dict[str, float]:
+        """Monte-Carlo estimates of the quantities the `mix` knob co-varies
+        (the confound to report next to any correlation sweep): E[total],
+        total-power CV, and mean per-scenario hottest-block power."""
+        rng = np.random.default_rng(seed)
+        saved = self.rng
+        self.rng = rng
+        try:
+            P = np.array(self.sample(n))
+        finally:
+            self.rng = saved
+        tot = P.sum(axis=1)
+        return {
+            "e_total": float(tot.mean()),
+            "total_cv": float(tot.std() / tot.mean()),
+            "mean_hot_block_w": float(P.max(axis=1).mean()),
+        }
+
+
+class RandomModesWorkloadModel:
+    """Multimodal workload whose mode structure is RANDOM, not hand-designed.
+
+    K sparse modes are drawn once from `family_seed`: each mode activates a
+    random subset of blocks (activity `hot` there, `cold` elsewhere). Scenario
+    sampling then mirrors the other models (pick a mode, multiply by
+    area-density weights, add multiplicative noise). Purpose: test whether
+    results attributed to "multimodal structure" (exp005, exp014) generalise
+    beyond the FP/INT/MEM hand-built families — a different `family_seed` is a
+    different structured workload with no designed cluster semantics. Report
+    `family_stats` (total-power CV, mean hot-block power, mean pairwise mode
+    overlap) alongside any comparison, matching the exp008 confound rule.
+    """
+
+    def __init__(self, units: list[dict], family_seed: int, seed: int = 0,
+                 k_modes: int = 4, sparsity: float = 0.3,
+                 hot: float = 1.0, cold: float = 0.08,
+                 total_power: float = 110.0, noise: float = 0.12):
+        self.units = units
+        self.noise = noise
+        self.rng = np.random.default_rng(seed)
+        n = len(units)
+        areas = np.array([u["width"] * u["height"] for u in units])
+        self.families = [_family(u["name"]) for u in units]
+        self.weight = np.array([DENSITY[f] for f in self.families]) * areas
+
+        frng = np.random.default_rng(family_seed)
+        n_hot = max(2, int(round(sparsity * n)))
+        self.modes = np.full((k_modes, n), cold)
+        for m in range(k_modes):
+            idx = frng.choice(n, size=n_hot, replace=False)
+            self.modes[m, idx] = hot
+        # E[total] ~= total_power across family seeds (matching the other models).
+        e_act = self.modes.mean(axis=0)
+        self.scale = total_power / float((e_act * self.weight).sum())
+
+    def sample(self, n: int) -> list[np.ndarray]:
+        """Return n power arrays (units order), same format as random_power_map."""
+        out = []
+        for _ in range(n):
+            a = self.modes[self.rng.integers(len(self.modes))]
+            p = a * self.weight * self.scale
+            p = p * (1.0 + self.rng.uniform(-self.noise, self.noise, size=len(p)))
+            out.append(p)
+        return out
+
+    def family_stats(self, n: int = 4000, seed: int = 12345) -> dict[str, float]:
+        """Confound quantities to report per family_seed (exp008 rule):
+        E[total], total-power CV, mean hottest-block power, mean pairwise
+        Jaccard overlap of the hot sets."""
+        rng = np.random.default_rng(seed)
+        saved = self.rng
+        self.rng = rng
+        try:
+            P = np.array(self.sample(n))
+        finally:
+            self.rng = saved
+        tot = P.sum(axis=1)
+        hot_sets = [set(np.where(m > 0.5)[0]) for m in self.modes]
+        overlaps = [len(a & b) / len(a | b)
+                    for i, a in enumerate(hot_sets) for b in hot_sets[i + 1:]]
+        return {
+            "e_total": float(tot.mean()),
+            "total_cv": float(tot.std() / tot.mean()),
+            "mean_hot_block_w": float(P.max(axis=1).mean()),
+            "mode_jaccard": float(np.mean(overlaps)),
+        }

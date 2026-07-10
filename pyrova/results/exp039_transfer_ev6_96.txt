@@ -1,0 +1,5 @@
+reversal transfer check: ev6 i.i.d., N_ORACLE=96, budget=15, train@24+jitter1.0 -> eval@32, 2 pairs (offset 0), N_TEST=200. [SMOKE]
+  pair 0: D*_k = +0.7045
+  pair 1: D*_k = +0.3958
+D*(transfer, N=96) = +0.5502 K CI[-1.4114,+2.5117] p=0.1742
+(CI>0 -> the reversal survives trap controls; <=0 -> matched-grid ghost. Pool pairs across offsets for the combined CI.)

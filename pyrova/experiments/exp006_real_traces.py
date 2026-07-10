@@ -9,11 +9,8 @@ second architecturally-different trace (e.g. a memory-bound SPEC benchmark on th
 Alpha 21264) into PROGRAMS to turn this into a real test — no code change. Do NOT
 synthesise the second program (that re-introduces the circularity exp005 already has).
 
-De-confounded metric (review), matching exp004/exp005: each cell reports
-    dCVaR = OOS CVaR(mean-opt) - OOS CVaR(CVaR-opt)   (>0 => CVaR-opt lower tail)
-    dMean = OOS mean(mean-opt) - OOS mean(CVaR-opt)   (<0 => CVaR-opt pays mean)
-so a hypothetical real signal would show as dCVaR>0 with dMean<0, not just a single
-one-sided number.
+Metric: de-confounded dCVaR/dMean cells (= mean-opt minus CVaR-opt), as exp004
+(definitions there); a real signal would show as dCVaR>0 with dMean<0.
 """
 
 from __future__ import annotations
@@ -62,10 +59,12 @@ def oos_mean_cvar(pl, scen, alpha):
 
 
 def family_corr(units, corr):
+    """nanmean: a constant-power block has undefined self-correlation entries and
+    must not NaN the cluster average (matches exp008's helper)."""
     fams = [_family(u["name"]) for u in units]
     idx = {f: [i for i, fa in enumerate(fams) if fa == f] for f in ("FP", "INT", "MEM")}
-    return (float(np.mean(corr[np.ix_(idx["FP"], idx["MEM"])])),
-            float(np.mean(corr[np.ix_(idx["FP"], idx["INT"])])))
+    return (float(np.nanmean(corr[np.ix_(idx["FP"], idx["MEM"])])),
+            float(np.nanmean(corr[np.ix_(idx["FP"], idx["INT"])])))
 
 
 def split_pools(progs, rng):
@@ -82,7 +81,8 @@ def deltas_at(solver, units, chip_w, chip_h, progs, n_train, alpha):
     """(dCVaR, dMean) with 95% CIs across seeds. dX = mean-opt minus CVaR-opt."""
     dC, dM = [], []
     for seed in range(N_SEEDS):
-        rng = np.random.default_rng(1000 * seed + n_train)
+        # alpha in the seed: the alpha columns of a row are independent splits.
+        rng = np.random.default_rng(100_000 * seed + 100 * n_train + int(round(alpha * 100)))
         tr_pool, te_pool = split_pools(progs, rng)
         train = [tr_pool[i] for i in rng.choice(len(tr_pool), n_train, replace=False)]
         nte = min(N_TEST, len(te_pool))
@@ -122,8 +122,13 @@ def main():
          f"{[lbl for lbl, _ in PROGRAMS]}, {len(stacked)} total timesteps.")
     emit(f"Disjoint train/test (no shared rows). Train pool {train_pool} rows -> "
          f"valid N_TRAIN {valid}; dropped (exceed pool) {[n for n in N_TRAINS if n not in valid]}.")
+    te_pool_n = len(stacked) - train_pool
+    emit(f"NOTE: test pool is only ~{te_pool_n} rows, so OOS CVaR at a=0.95 averages ~"
+         f"{max(1, int(te_pool_n * 0.05))} rows — far below the project's N_TEST>=1500 rule. "
+         f"Tolerated ONLY because this is a sanity check, not a hypothesis test.")
+    anti = [lab for lab, v in (("FP/MEM", fm), ("FP/INT", fi)) if v < -0.1]
     emit(f"MEASURED across-scenario structure: corr(FP,MEM)={fm:+.3f}  corr(FP,INT)={fi:+.3f} "
-         f"-> {'anti-correlated' if fm < -0.1 else 'NOT anti-correlated'}")
+         f"-> {'anti-correlated (' + ', '.join(anti) + ')' if anti else 'NOT anti-correlated'}")
     if len(PROGRAMS) == 1:
         emit("WARNING: ONE program = a single steady-state operating point, NOT a workload "
              "distribution. Across-timestep variation is not the across-PROGRAM uncertainty "

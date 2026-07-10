@@ -1,0 +1,19 @@
+Correlation-threshold sweep on ev6 (30 blocks). N_TRAIN=128, alpha=0.9, N_TEST=1500, 8 seeds, grid 18x18, 30 iter.
+mix = CONTRAST(anti-corr,0) -> COMMON(co-activated,1); corr(FP,MEM)/corr(FP,INT) MEASURED.
+dCVaR/dMean = mean-opt minus CVaR-opt. '*' dCVaR CI>0 (CVaR helps), 'x' dCVaR CI<0.
+totCV / hotW = measured total-power CV and mean hottest-block power per mix — the
+quantities the mix knob CO-VARIES with correlation (confound; see module docstring).
+   mix |  corrFM  corrFI |  totCV   hotW |    dCVaR           95% CI |   dMean
+  ----------------------------------------------------------------------------
+  0.00 |  -0.579  -0.412 |  0.050   35.2 |   +1.02* [ +0.41, +1.64] |   -4.10
+  0.15 |  -0.280  -0.144 |  0.394   32.5 |   +3.81* [ +2.89, +4.72] |   +0.30
+  0.30 |  -0.027   0.088 |  0.524   30.4 |   +1.91* [ +0.99, +2.83] |   +0.47
+  0.50 |   0.282   0.378 |  0.633   27.8 |   +0.84* [ +0.56, +1.12] |   -0.06
+  0.70 |   0.573   0.636 |  0.705   25.4 |   +0.57* [ +0.39, +0.75] |   -0.73
+  0.85 |   0.803   0.807 |  0.744   23.6 |   +0.30* [ +0.19, +0.40] |   -0.97
+  1.00 |   0.987   0.987 |  0.779   21.8 |   +0.21* [ +0.09, +0.32] |   -0.65
+
+GATE 1 anti-corr anchor (mix=0, corr=-0.58): dCVaR=+1.02 [+0.41,+1.64] -> PASS (requires CI>0, the exp005 positive)
+GATE 2 co-activated anchor (mix=1, corr=+0.99): dCVaR=+0.21 [+0.09,+0.32] -> FAIL (requires dCVaR NOT significantly >0: no tail dimension when clusters co-activate)
+GATE FAILED -> the threshold reading is NOT to be trusted (pre-registered rule).
+Gate 2 failing means the model has a learnable tail dimension even with fully co-activated clusters — the 'benefit at every correlation' pattern is then a property OF THE MODEL (its discrete-mode structure and/or the total-power-CV confound above), not evidence about correlation. Redesign the COMMON family (or explain its residual structure) before interpreting the sweep.

@@ -1,25 +1,23 @@
 """Learnability sweep (N_train x alpha): does targeting the tail help TRUE tail risk?
 
 Sweeps the small-N -> large-N curve for mean-opt vs CVaR-opt on the i.i.d. synthetic
-workload. The scientific story here is the SHAPE of the curve in N_train (does the
-benefit of CVaR appear, and does it persist or collapse), not any single cell.
+workload. The scientific story is the SHAPE of the curve in N_train (does a CVaR
+benefit appear, persist, or collapse), not any single cell.
 
-De-confounded metric (review). The old report was a single
-    gap = OOS CVaR(mean-opt) - OOS CVaR(CVaR-opt),
-which conflates (A) scoring CVaR-opt on the very functional it minimised with
-(B) CVaR-opt overfitting the noisy empirical tail; the sign of one number cannot
-tell a genuine tail benefit from overfitting. Each cell now reports TWO deltas on a
+De-confounded metric (review): the old single
+    gap = OOS CVaR(mean-opt) - OOS CVaR(CVaR-opt)
+conflates (A) scoring CVaR-opt on the very functional it minimised with (B) CVaR-opt
+overfitting the noisy empirical tail. Each cell instead reports TWO deltas on a
 large holdout (OOS ~= true):
 
     dCVaR = OOS CVaR(mean-opt) - OOS CVaR(CVaR-opt)   (>0 => CVaR-opt has lower tail)
     dMean = OOS mean(mean-opt) - OOS mean(CVaR-opt)   (<0 => CVaR-opt pays mean)
 
-Read them together: dCVaR>0 with dMean<0 is a genuine mean-for-tail trade; dCVaR<=0
-with dMean<=0 is CVaR-opt dominated (overfitting on both); dCVaR<0 means CVaR-opt is
-worse even on its own metric (overfitting swamps any signal). On this i.i.d. workload
-the expectation (and the prior finding) is overfitting: CVaR-opt reaches parity only
-as N grows, never a benefit. See exp005 for the structured-workload analogue and
-exp003 for the overfitting-free oracle existence test.
+Read together: dCVaR>0 with dMean<0 is a genuine mean-for-tail trade; dCVaR<=0 with
+dMean<=0 is CVaR-opt dominated (overfitting on both); dCVaR<0 means CVaR-opt is
+worse even on its own metric. Expectation on this i.i.d. workload: overfitting —
+CVaR-opt reaches parity only as N grows, never a benefit. Structured analogue:
+exp005; overfitting-free oracle existence test: exp003.
 """
 
 from __future__ import annotations
@@ -35,7 +33,7 @@ sys.path.insert(0, str(ROOT))
 
 from pyrova.thermal.fd_solver import GridFDSolver, parse_flp, parse_config, random_power_map
 from pyrova.optimizer.placer import DiffPlacer
-from pyrova.evaluation.metrics import mean_cvar, ci95_t
+from pyrova.evaluation.metrics import mean_cvar, ci95_t, paired_t_p, holm
 
 CONFIG = PKG / "inputs/configs/thermal.config"
 BENCHES = [PKG / "inputs/floorplans/ev6.flp",
@@ -65,10 +63,12 @@ def oos_mean_cvar(pl, scen, alpha):
 
 
 def deltas_at(solver, units, chip_w, chip_h, tot, n_train, alpha):
-    """(dCVaR, dMean) with 95% CIs across seeds. dX = mean-opt minus CVaR-opt."""
+    """(dCVaR, dMean) with 95% CIs across seeds + paired-t p for dCVaR.
+    dX = mean-opt minus CVaR-opt. The cell seed includes alpha so the three
+    alpha columns of a row are independent draws, not one draw shown thrice."""
     dC, dM = [], []
     for seed in range(N_SEEDS):
-        rng = np.random.default_rng(1000 * seed + n_train)
+        rng = np.random.default_rng(100_000 * seed + 100 * n_train + int(round(alpha * 100)))
         train = scen_set(units, tot, rng, n_train)
         test = scen_set(units, tot, rng, N_TEST)
         p_mean = DiffPlacer(solver, units, chip_w, chip_h, NR, NC, alpha=alpha)
@@ -80,7 +80,7 @@ def deltas_at(solver, units, chip_w, chip_h, tot, n_train, alpha):
         dC.append(cm - cc); dM.append(mm - mc)
     gc, _, c_lo, c_hi = ci95_t(dC)
     gm, _, m_lo, m_hi = ci95_t(dM)
-    return gc, c_lo, c_hi, gm, m_lo, m_hi
+    return gc, c_lo, c_hi, gm, m_lo, m_hi, paired_t_p(dC)
 
 
 def cell(gc, c_lo, c_hi, gm) -> str:
@@ -105,15 +105,28 @@ def run(path: Path, cfg, fh) -> None:
     emit("read together: dCVaR>0 & dMean<0 = genuine trade; both<=0 = overfit/dominated.")
     emit(f"  {'N_TRAIN':>8} | " + " ".join(f"a={a:<11.2f}" for a in ALPHAS))
     emit("  " + "-" * (10 + 14 * len(ALPHAS)))
+    rows = []
     for nt in N_TRAINS:
         cells = []
         for a in ALPHAS:
-            gc, c_lo, c_hi, gm, m_lo, m_hi = deltas_at(solver, units, chip_w, chip_h, tot, nt, a)
+            gc, c_lo, c_hi, gm, m_lo, m_hi, p_c = deltas_at(solver, units, chip_w, chip_h, tot, nt, a)
             cells.append(f"{cell(gc, c_lo, c_hi, gm):>13}")
+            rows.append(dict(nt=nt, a=a, gc=gc, lo=c_lo, hi=c_hi, p=p_c))
             fh.write(f"    # {path.stem} N_TRAIN={nt} a={a}: "
-                     f"dCVaR={gc:+.3f} CI[{c_lo:+.3f},{c_hi:+.3f}]  "
+                     f"dCVaR={gc:+.3f} CI[{c_lo:+.3f},{c_hi:+.3f}] p={p_c:.4f}  "
                      f"dMean={gm:+.3f} CI[{m_lo:+.3f},{m_hi:+.3f}]\n")
         emit(f"  {nt:>8} | " + " ".join(cells))
+
+    # Familywise-corrected reading over the len(rows)-cell family: per-cell '*'
+    # at 95% has ~54% chance of >=1 false positive across 15 cells under the
+    # global null; only Holm-surviving cells count as significant claims.
+    keep = holm([r["p"] for r in rows])
+    sig = [f"N={r['nt']},a={r['a']}({r['gc']:+.2f})" for r, k in zip(rows, keep)
+           if k and r["gc"] > 0]
+    neg = [f"N={r['nt']},a={r['a']}({r['gc']:+.2f})" for r, k in zip(rows, keep)
+           if k and r["gc"] < 0]
+    emit(f"  Holm ({len(rows)} cells): dCVaR>0 surviving: {', '.join(sig) if sig else 'NONE'}; "
+         f"dCVaR<0 surviving: {', '.join(neg) if neg else 'none'}")
 
 
 def main():

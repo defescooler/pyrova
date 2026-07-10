@@ -1,0 +1,12 @@
+headline hardening: hetero-SoC oracle D*, 2 pairs, symmetric best-of-1+CRN, legalized eval. alpha=[0.9] x grid=[32] x metric=['peak', 'hot1'] (hot1=hottest 1%). [SMOKE - not a result]
+GATE hotspot mobility: 6 blocks -> PASS
+legality: max residual overlap 0.086% (OK)
+
+  grid metric alpha        D*     CI_lo     CI_hi    dMean       p
+    32   peak  0.90   +0.0263*   +0.0113   +0.0413  -0.0071  0.0286
+    32   hot1  0.90   +0.0287*   +0.0152   +0.0422  -0.0059  0.0236
+
+  (32,peak,0.90) D*=+0.0263 (prior favorable est +0.068)
+  2/2 cells positive; 2 Holm-significant; 2 of those also dMean<=0.
+
+VERDICT: CONFIRMED & ROBUST — every cell D*>0, none CI<0, 2 Holm-significant (2 with dMean<=0); the favorable-regime positive is not a knob, power, or baseline-asymmetry artifact.

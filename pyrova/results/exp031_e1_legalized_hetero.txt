@@ -1,0 +1,6 @@
+exp031 (P11): E1 headlines under legalized evaluation. alpha=0.9, train@18+jitter, 10 it, legal tol 0.1%, testbed=hetero. [SMOKE - not a result]
+
+===== hetero-SoC (exp023 E1): 12 blocks, E1 x 2 pairs, N_ORACLE=40, eval@32 raw+legalized =====
+  pair 0: D*_raw=+0.029  D*_legal=+0.019  (overlap mean 0.64->0.04%, cvar 0.44->0.10%)
+  pair 1: D*_raw=+0.036  D*_legal=+0.011  (overlap mean 0.49->0.08%, cvar 0.70->0.08%)
+  hetero-SoC (exp023 E1): too few legal pairs (2) — NO VERDICT.

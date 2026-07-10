@@ -1,0 +1,19 @@
+exp013 PART A: optimizer-confound test on ev6, i.i.d., alpha=0.9, N_ORACLE=1000, N_TEST=4000, 3 pairs, grid 18x18.
+arms: mean(std 30it) / mean(bo3) / cvar(std) / cvar(4x=120it) / cvar(bo3); restart selection on the TRAINING objective only.
+deficit = OOS CVaR(arm) - OOS CVaR(mean-std of the same pair); >0 is impossible for exact optimisation (see docstring).
+  pair 0: mean-std=(21.40,36.36)  mean-bo3=(21.40,36.36)  cvar-std=(22.26,36.91)  cvar-4x=(22.05,36.67)  cvar-bo3=(22.26,36.91)
+  pair 1: mean-std=(21.62,36.69)  mean-bo3=(21.62,36.69)  cvar-std=(21.93,36.53)  cvar-4x=(21.89,36.39)  cvar-bo3=(21.93,36.53)
+  pair 2: mean-std=(21.53,36.67)  mean-bo3=(21.53,36.67)  cvar-std=(22.33,37.03)  cvar-4x=(22.36,36.96)  cvar-bo3=(22.33,37.03)
+
+  own-metric deficit vs mean-std [K] (mean over pairs, +sd):
+    mean-bo3   +0.000 (sd 0.000)
+    cvar-std   +0.252 (sd 0.371)
+    cvar-4x    +0.097 (sd 0.348)
+    cvar-bo3   +0.252 (sd 0.371)
+  cvar-4x closes 61% of cvar-std's deficit (+0.252 -> +0.097)
+  cvar-bo3 closes 0% of cvar-std's deficit (+0.252 -> +0.252)
+  PART A READING: deficit substantially OPTIMIZER-INDUCED (>=50% closed by more optimisation quality) — the i.i.d. negatives are partly about the optimiser, not the objective; smoothed/variance-reduced CVaR optimisation is warranted.
+
+exp013 PART B: replicate exp010 iid anomaly (N=16, gamma=0.5), 20 fresh seeds, N_TEST=1500.
+  vs_mean(gamma=0.5) = -0.105 K CI[-0.255,+0.045] p=0.1593 (20 seeds)
+  PRE-REGISTERED: NOT replicated — exp010's cell was multiplicity noise, as presumed.

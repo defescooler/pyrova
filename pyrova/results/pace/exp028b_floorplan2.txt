@@ -1,0 +1,3 @@
+budget ladder, floorplan2 only. budgets=[40, 120, 240], N_OR_PAIRS=12, N_ORACLE=1500.
+
+=== floorplan2 (18 blocks), alpha=0.9, grid 24^2, N_ORACLE=1500, 12 paired pairs ===

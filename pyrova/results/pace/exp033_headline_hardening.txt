@@ -1,0 +1,22 @@
+headline hardening: hetero-SoC oracle D*, 20 pairs, symmetric best-of-3+CRN, legalized eval. alpha=[0.9, 0.95] x grid=[64, 96, 128] x metric=['peak', 'hot1'] (hot1=hottest 1%). [full run]
+GATE hotspot mobility: 6 blocks -> PASS
+legality: max residual overlap 0.100% (OK)
+
+  grid metric alpha        D*     CI_lo     CI_hi    dMean       p
+    64   peak  0.90   +0.0667*   +0.0594   +0.0739  -0.0160  0.0000
+    64   hot1  0.90   +0.0667*   +0.0593   +0.0741  -0.0213  0.0000
+    96   peak  0.90   +0.0665*   +0.0592   +0.0737  -0.0151  0.0000
+    96   hot1  0.90   +0.0666*   +0.0592   +0.0740  -0.0211  0.0000
+   128   peak  0.90   +0.0661*   +0.0589   +0.0733  -0.0148  0.0000
+   128   hot1  0.90   +0.0664*   +0.0591   +0.0738  -0.0210  0.0000
+    64   peak  0.95   +0.0626*   +0.0538   +0.0714  -0.0217  0.0000
+    64   hot1  0.95   +0.0622*   +0.0536   +0.0709  -0.0279  0.0000
+    96   peak  0.95   +0.0627*   +0.0539   +0.0714  -0.0207  0.0000
+    96   hot1  0.95   +0.0623*   +0.0537   +0.0708  -0.0277  0.0000
+   128   peak  0.95   +0.0622*   +0.0535   +0.0709  -0.0205  0.0000
+   128   hot1  0.95   +0.0621*   +0.0536   +0.0707  -0.0276  0.0000
+
+  (64,peak,0.90) D*=+0.0667 (prior favorable est +0.068)
+  12/12 cells positive; 12 Holm-significant; 12 of those also dMean<=0.
+
+VERDICT: CONFIRMED & ROBUST — every cell D*>0, none CI<0, 12 Holm-significant (12 with dMean<=0); the favorable-regime positive is not a knob, power, or baseline-asymmetry artifact.

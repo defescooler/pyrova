@@ -1,0 +1,33 @@
+exp015-A: BOOM blend, ALL arms at 120 iterations (60/20 x 20 splits, NB CI, alpha=0.9). Same splits as exp012 (seed base 40_000).
+  split 1/20 done
+  split 2/20 done
+  split 3/20 done
+  split 4/20 done
+  split 5/20 done
+  split 6/20 done
+  split 7/20 done
+  split 8/20 done
+  split 9/20 done
+  split 10/20 done
+  split 11/20 done
+  split 12/20 done
+  split 13/20 done
+  split 14/20 done
+  split 15/20 done
+  split 16/20 done
+  split 17/20 done
+  split 18/20 done
+  split 19/20 done
+  split 20/20 done
+   gamma  OOSmean  OOSCVaR           dCVaR vs mean           dMean vs mean
+    0.00   33.918   55.634                  -                       -     
+    0.75   32.201   53.197   +2.437* [+0.10,+4.77]   +1.717  [+1.09,+2.34]
+    1.00   32.881   53.659   +1.974  [-1.20,+5.15]   +1.037  [+0.31,+1.77]
+  A VERDICT: CONFIRMED-ROBUST as a placement-quality win: dCVaR +2.437 CI>0 at matched budgets, but blend still beats mean-opt on the mean too (dMean +1.717) — a domination pattern, not the theory's trade.
+
+exp015-B: i.i.d. D* with both oracles at 120 iterations (ev6, N_ORACLE=1000, 3 pairs, N_TEST=4000).
+  pair 0: D*_k = -0.371
+  pair 1: D*_k = +0.231
+  pair 2: D*_k = -0.328
+  D*(120it) = -0.156 K CI[-0.992,+0.679]
+  B VERDICT: RESOLVED — D* is no longer significantly negative under the equalized optimizer; exp003's negative was convergence-speed, and the i.i.d. claim should read 'no separable tail dimension' (not 'harmful').

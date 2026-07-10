@@ -1,0 +1,13 @@
+exp029: wirelength-CONSTRAINED payoff on REAL BOOM power. 80 programs, 27 leaves, 6 hierarchy nets, corr(FP,INT)=-0.287, totCV=0.257. [SMOKE - not a result]
+alpha=0.9, train@18+jitter1.0, eval@32, 15 it, ALL arms best-of-1 (symmetric), 2 splits 60/20, NB-CI. lambda grid: [0.0, 20000.0]
+  lambda=      0 cvar : dCVaR=-0.449 [-18.769,+17.871] dMean=-0.287 [-3.033,+2.460]  (HPWL=10.76mm, peak=34.20K)
+  lambda=      0 blend: dCVaR=+0.358 [-2.717,+3.433] dMean=+0.185 [-0.029,+0.398]  (HPWL=10.76mm, peak=34.20K)
+  lambda=  20000 cvar : dCVaR=-0.438 [-12.328,+11.452] dMean=-0.241 [-5.615,+5.133]  (HPWL=9.64mm, peak=33.79K)
+  lambda=  20000 blend: dCVaR=+0.123 [-4.368,+4.614] dMean=+0.001 [-2.290,+2.291]  (HPWL=9.64mm, peak=33.79K)
+
+  G2 (constraint binds): HPWL 10.76->9.64 mm, peak 34.20->33.79 K -> FAIL
+
+===== PRE-REGISTERED VERDICTS =====
+NO VERDICT — G2 failed (constraint did not bind); widen the lambda grid.
+cvar: NULL / UNINFORMATIVE — no lambda clears NB-CI>0 (BOOM's ~2-3 program test tail at alpha=0.9 is the power blocker, exp009). OPEN, not negative.
+blend: NULL / UNINFORMATIVE — no lambda clears NB-CI>0 (BOOM's ~2-3 program test tail at alpha=0.9 is the power blocker, exp009). OPEN, not negative.

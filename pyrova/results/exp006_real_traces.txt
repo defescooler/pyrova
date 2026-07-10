@@ -1,0 +1,18 @@
+Real-trace probe on ev6 (30 blocks). 1 program(s): ['gcc'], 100 total timesteps.
+Disjoint train/test (no shared rows). Train pool 50 rows -> valid N_TRAIN [16, 32]; dropped (exceed pool) [64, 128, 256].
+NOTE: test pool is only ~50 rows, so OOS CVaR at a=0.95 averages ~2 rows — far below the project's N_TEST>=1500 rule. Tolerated ONLY because this is a sanity check, not a hypothesis test.
+MEASURED across-scenario structure: corr(FP,MEM)=+0.639  corr(FP,INT)=+0.705 -> NOT anti-correlated
+WARNING: ONE program = a single steady-state operating point, NOT a workload distribution. Across-timestep variation is not the across-PROGRAM uncertainty the hypothesis concerns. This is a SANITY CHECK, not a valid test. Add a 2nd architecturally-different program to PROGRAMS for a real test.
+cell = dCVaR[flag]/dMean [K], both = mean-opt minus CVaR-opt. '*' dCVaR CI>0, 'x' CI<0.
+   N_TRAIN | a=0.80        a=0.90        a=0.95       
+  ----------------------------------------------------
+    # N_TRAIN=16 a=0.8: dCVaR=-0.013 CI[-0.114,+0.089]  dMean=-0.328 CI[-0.709,+0.052]
+    # N_TRAIN=16 a=0.9: dCVaR=-0.030 CI[-0.278,+0.218]  dMean=-0.565 CI[-1.321,+0.191]
+    # N_TRAIN=16 a=0.95: dCVaR=-0.199 CI[-0.511,+0.114]  dMean=-0.716 CI[-0.830,-0.603]
+        16 |  -0.01 /-0.33  -0.03 /-0.57  -0.20 /-0.72
+    # N_TRAIN=32 a=0.8: dCVaR=+0.055 CI[+0.042,+0.068]  dMean=-0.172 CI[-0.413,+0.069]
+    # N_TRAIN=32 a=0.9: dCVaR=-0.009 CI[-0.269,+0.251]  dMean=-0.263 CI[-0.833,+0.308]
+    # N_TRAIN=32 a=0.95: dCVaR=+0.036 CI[-0.066,+0.139]  dMean=-0.704 CI[-1.537,+0.129]
+        32 |  +0.06*/-0.17  -0.01 /-0.26  +0.04 /-0.70
+
+Verdict: NOT a valid test (single program). gcc is one program in steady state; with no workload diversity there is nothing to be robust against, so a ~0 gap is expected and uninformative about real across-program uncertainty.

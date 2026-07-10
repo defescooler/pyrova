@@ -1,0 +1,13 @@
+exp019: strong mean baseline + fresh-split replication. 80 programs, 60/20 x 20 FRESH splits (seed base 90000), alpha=0.9, grid 18x18, lr=2e-2, NB CIs.
+arms: mean-std (120 it, 1 start) / mean-strong (best-of-5 x 240 it, selection on TRAINING mean) / blend g=0.75 (120 it).
+
+  arm             OOSmean  OOSCVaR
+  mean-std         34.322   56.769
+  mean-strong      32.766   54.076
+  blend            32.922   54.325
+
+  mean-strong vs mean-std (baseline gain) dCVaR=+2.693* [+0.70,+4.68]  dMean=+1.556* [+0.43,+2.68]
+  blend vs mean-std (exp015-A replication) dCVaR=+2.444* [+0.87,+4.02]  dMean=+1.400* [+0.53,+2.27]
+  blend vs mean-STRONG (primary)     dCVaR=-0.249  [-3.15,+2.65]  dMean=-0.156  [-1.36,+1.05]
+
+PRE-REGISTERED VERDICT: BASELINE ARTIFACT: the strong mean baseline closes the gap — re-scope claim 11 to equal-effort single-start training and demote the domination finding.

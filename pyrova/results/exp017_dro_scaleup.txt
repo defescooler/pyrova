@@ -1,0 +1,14 @@
+exp017: DRO scale-up on ev6 — 8 seeds, N in [64, 128], 120 iter (matched budget), eps by 2-fold CV in [0.1, 0.25, 0.5] sigma-units, alpha=0.9, N_TEST=1500, grid 18x18.
+families: ['hand-built', 'random:1', 'random:2']; vs_cvar0 = CVaR(pure-CVaR) - CVaR(dro_exact); Holm over the 6 (family,N) cells.
+  hand-built stats: 
+  random:1 stats: e_total=109.642  total_cv=0.348  mean_hot_block_w=38.057  mode_jaccard=0.208
+  random:2 stats: e_total=109.703  total_cv=0.176  mean_hot_block_w=32.616  mode_jaccard=0.130
+  [hand-built N=64] vs_cvar0=+0.289* [+0.145,+0.432] p=0.0021
+  [hand-built N=128] vs_cvar0=+0.370* [+0.240,+0.499] p=0.0003
+  [random:1 N=64] vs_cvar0=+0.598  [-3.936,+5.132] p=0.7643
+  [random:1 N=128] vs_cvar0=+0.583  [-3.737,+4.904] p=0.7588
+  [random:2 N=64] vs_cvar0=-1.337x [-1.683,-0.991] p=0.0000
+  [random:2 N=128] vs_cvar0=-1.313x [-2.000,-0.626] p=0.0027
+
+Holm survivors (vs_cvar0>0): hand-built N=64 (+0.289), hand-built N=128 (+0.370)
+PRE-REGISTERED VERDICT: PARTIAL: survivors only in the hand-built family — the positive may be family-specific; scope the claim accordingly.

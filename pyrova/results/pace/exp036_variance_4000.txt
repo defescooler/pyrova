@@ -1,0 +1,8 @@
+objective x N cell: ev6 i.i.d., N_ORACLE=4000, 6 pairs, budget=100, train@18+jitter, eval@64 (alpha_eval=0.9). D* = trueCVaR(mean) - trueCVaR(arm). [full]
+
+  objective         D*     CI_lo     CI_hi       p  Holm
+  cvar         -0.1352    -0.3841   +0.1137  0.2213  
+  blend        -0.0715    -0.2175   +0.0745  0.2637  
+  cvar_wide    +0.0387    -0.1570   +0.2344  0.6327  
+
+  N=4000: no objective clears CI>0 (all overfit at this N).
