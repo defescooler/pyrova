@@ -1,20 +1,4 @@
-"""Netlists (connectivity for HPWL) for the constrained-placement experiment
-(exp027 / Problem A).
-
-PROVENANCE — two tiers, kept explicit:
-  * ev6_nets: the CANONICAL Alpha-EV6 connectivity from HotSpot's HotFloorplan
-    (`inputs/floorplans/ev6.desc`, copied verbatim from the HotSpot
-    distribution's example6). This is the netlist the thermal-floorplanning
-    literature has cited since 2006 — NOT synthetic. Its 16 aggregated blocks
-    are mapped onto the split `ev6.flp` blocks (L2 -> L2_left/L2/L2_right,
-    Bpred -> Bpred_0/1/2, ...).
-  * soc_nets: HAND-BUILT, STYLISED (the lower "synthetic-configurations" rung).
-    Kept only as a secondary sensitivity testbed for the mechanism; every
-    result on it is an existence statement, never prevalence.
-
-A net is a list of MACRO INDICES into the given `units` list (solver-unit
-dicts). `nets_by_name` maps names to indices and drops names not present.
-"""
+"""Netlists (connectivity for HPWL) for the constrained-placement problem."""
 
 from __future__ import annotations
 from pathlib import Path
@@ -36,9 +20,7 @@ def nets_by_name(units: list[dict], groups: list[list[str]]) -> list[list[int]]:
 
 
 def _subblocks(units: list[dict], agg_name: str) -> list[int]:
-    """Indices of the split `.flp` blocks an aggregated `.desc` unit maps to:
-    an exact name match or `agg_name` + '_<suffix>' (e.g. L2 -> L2, L2_left,
-    L2_right; Bpred -> Bpred_0/1/2). IntReg matches IntReg_* but not IntMap."""
+    """Indices of the split `.flp` blocks an aggregated `.desc` unit maps to: exact name match or `agg_name` + '_<suffix>'."""
     out = []
     for i, u in enumerate(units):
         nm = u["name"]
@@ -48,13 +30,7 @@ def _subblocks(units: list[dict], agg_name: str) -> list[int]:
 
 
 def ev6_nets(units: list[dict], desc_path: str | Path = EV6_DESC) -> list[list[int]]:
-    """Canonical Alpha-EV6 netlist from HotFloorplan's `ev6.desc`.
-
-    Each connectivity edge (unitA, unitB) becomes one net over the union of the
-    two aggregated units' split sub-blocks in `units`, so two connected
-    functional units are pulled together (and their sub-blocks kept compact).
-    14 canonical edges. Falls back to nothing for names absent from `units`.
-    """
+    """Canonical Alpha-EV6 netlist from `ev6.desc`: each connectivity edge becomes one net over the two units' split sub-blocks."""
     edges = parse_desc_connectivity(str(desc_path))
     nets = []
     for a, b, _w in edges:
@@ -65,9 +41,7 @@ def ev6_nets(units: list[dict], desc_path: str | Path = EV6_DESC) -> list[list[i
 
 
 def _boom_leaf_units(rpt_path: str) -> dict[str, str]:
-    """Map each BOOM leaf component -> its Core architectural sub-unit, read from
-    the McPAT report hierarchy (a pre-order traversal, so a unit header precedes
-    its leaves). Purely structural: no hand-drawn edges."""
+    """Map each BOOM leaf component to its Core architectural sub-unit, read from the McPAT report hierarchy (a pre-order traversal)."""
     from pyrova.workloads.boom_traces import _PFX
     from pyrova.core.io import _data_lines
     core_units = ("Instruction Fetch Unit", "Renaming Unit", "Load Store Unit",
@@ -89,12 +63,7 @@ def _boom_leaf_units(rpt_path: str) -> dict[str, str]:
 
 
 def boom_nets(units: list[dict], rpt_path: str) -> list[list[int]]:
-    """BOOM netlist DERIVED FROM the McPAT module hierarchy (not hand-drawn).
-
-    One net per Core architectural sub-unit (its leaf components communicate
-    within the unit), plus one sibling-backbone net connecting a representative
-    leaf of each unit (they share the Core parent). `units` are BoomWorkload
-    unit dicts (names = McPAT leaves)."""
+    """BOOM netlist derived from the McPAT module hierarchy: one net per Core sub-unit plus a sibling-backbone net."""
     unit_of = _boom_leaf_units(rpt_path)
     idx = {u["name"]: i for i, u in enumerate(units)}
     groups: dict[str, list[int]] = {}
@@ -109,14 +78,7 @@ def boom_nets(units: list[dict], rpt_path: str) -> list[list[int]]:
 
 
 def soc_nets(units: list[dict]) -> list[list[int]]:
-    """Stylised netlist for the hetero-SoC (workloads/hetero_soc.py).
-
-    Hub topology: every compute engine caches through the SLC and streams from
-    DDR; the CPU performance cores form a coherent cluster and the two GPU
-    halves are tightly bound. The two heaviest engines (GPU halves at 9 W, CPU
-    P-cores at 7 W) are exactly the ones wirelength wants adjacent and thermal
-    wants apart.
-    """
+    """Stylised hub-topology netlist for the hetero-SoC where wirelength wants the two heaviest engines adjacent and thermal wants them apart."""
     groups = [
         # SLC cache hub — everyone caches through it
         ["SLC", "CPU_P0", "CPU_P1", "CPU_E", "GPU_0", "GPU_1", "NPU",

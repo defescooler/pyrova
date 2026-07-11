@@ -14,7 +14,6 @@ from pyrova.core.design import Design, ThermalConfig
 from pyrova.core.io import parse_config
 from pyrova.thermal.fd_solver import GridFDSolver, random_power_map
 from pyrova.optimizer.placer import DiffPlacer, cvar_and_grad
-from pyrova.objectives.dro import wasserstein_cvar_penalty
 
 FLP = "pyrova/inputs/floorplans/ev6.flp"
 CONFIG = "pyrova/inputs/configs/thermal.config"
@@ -96,9 +95,7 @@ def _check_position_gradient(mode: str, h=2e-3, tol=1e-4, min_clean=3):
 
     # Isolate the thermal term: drop the non-overlap penalty for the check.
     pl = DiffPlacer(s, units, d.chip_width, d.chip_height, 24, 24,
-                    alpha=0.75,
-                    eps_dro=(0.3 if mode in ("dro", "dro_exact") else 0.0),
-                    nonoverlap_w=0.0)
+                    alpha=0.75, nonoverlap_w=0.0)
     pl.raw_x += rng.standard_normal(pl.n) * 0.3   # jitter macros off cell edges
     pl.raw_y += rng.standard_normal(pl.n) * 0.3
     rx0, ry0 = pl.raw_x.copy(), pl.raw_y.copy()
@@ -112,15 +109,7 @@ def _check_position_gradient(mode: str, h=2e-3, tol=1e-4, min_clean=3):
         peaks = pl._scenario_peaks(cx, cy, scen)
         if mode == "mean":
             return float(peaks.mean())
-        val = cvar_and_grad(peaks, pl.alpha)[0]
-        if mode == "dro":
-            val += pl._dro_penalty_at(cx, cy, peaks, scen)[0]
-        elif mode == "dro_exact":
-            saved_x = pl.raw_x
-            pl.raw_x = rx
-            val += pl.dro_exact_term()
-            pl.raw_x = saved_x
-        return val
+        return cvar_and_grad(peaks, pl.alpha)[0]
 
     idx = np.argsort(-np.abs(g_rx))[:6]      # most sensitive coordinates
     worst_clean, n_clean = 0.0, 0
@@ -143,78 +132,6 @@ def test_position_gradient_mean():
 
 def test_position_gradient_cvar():
     _check_position_gradient("cvar")
-
-
-def test_position_gradient_dro():
-    # The DRO term's own gradient is central-FD of the sensitivity scalar with a
-    # frozen worst scenario; the check verifies the assembled total.
-    _check_position_gradient("dro", tol=5e-3)
-
-
-def test_position_gradient_dro_exact():
-    # Certified global-Lambda penalty with ANALYTIC gradient (no FD inside):
-    # tolerance can be tight; kinks only at argmax-node/cell-boundary switches.
-    _check_position_gradient("dro_exact", tol=1e-4)
-
-
-def test_dro_penalty_consistency():
-    """The penalty equals eps/(1-alpha) * (independently recomputed max tail
-    sensitivity) — checks the tail set, the factor, and the sensitivity source,
-    not just linearity in eps."""
-    d, units, s = _solver(nr=16, nc=16)
-    rng = np.random.default_rng(7)
-    scen = [np.array([random_power_map(units, 50.0, rng)[u["name"]] for u in units])
-            for _ in range(8)]
-    alpha, eps = 0.9, 0.5
-    pl = DiffPlacer(s, units, d.chip_width, d.chip_height, 16, 16,
-                    alpha=alpha, eps_dro=eps, nonoverlap_w=0.0)
-    pen = pl.dro_term(scen)
-
-    # Independent recomputation from primitives.
-    cx, cy = pl.get_positions()
-    peaks = pl._scenario_peaks(cx, cy, scen)
-    q = np.quantile(peaks, alpha)
-    lam = max(pl._dro_lipschitz(cx, cy, scen[i])
-              for i in range(len(scen)) if peaks[i] >= q)
-    expect = eps / (1.0 - alpha) * lam
-    rel = abs(pen - expect) / (abs(expect) + 1e-12)
-    print(f"  penalty={pen:.4f}  expected eps/(1-a)*max_tail||g||={expect:.4f}  rel={rel:.2e}")
-    assert rel < 1e-9, "DRO penalty inconsistent with its definition"
-
-    p0 = DiffPlacer(s, units, d.chip_width, d.chip_height, 16, 16,
-                    alpha=alpha, eps_dro=0.0, nonoverlap_w=0.0).dro_term(scen)
-    assert p0 == 0.0, "penalty should vanish at eps=0"
-
-    # Report (no assert) how far the tail-data estimate sits below the exact
-    # global Lipschitz constant of the dual — the documented approximation gap.
-    from pyrova.objectives.dro import exact_lipschitz
-    s.units = pl.get_units()
-    L = exact_lipschitz(s)
-    print(f"  tail-data Lambda={lam:.4f}  exact global L(p)={L:.4f}  "
-          f"(implemented penalty = {100.0 * lam / L:.1f}% of exact dual)")
-
-
-def test_dro_has_teeth():
-    """DRO gradient is non-zero and distinct from CVaR, and DRO optimisation
-    descends the worst-case-CVaR penalty it targets."""
-    d, units, s = _solver(nr=16, nc=16)
-    rng = np.random.default_rng(3)
-    scen = [np.array([random_power_map(units, 50.0, rng)[u["name"]] for u in units])
-            for _ in range(6)]
-
-    pl = DiffPlacer(s, units, d.chip_width, d.chip_height, 16, 16,
-                    alpha=0.9, eps_dro=0.5, nonoverlap_w=0.0)
-    _, gx_cvar, _ = pl.objective_and_grad(scen, mode="cvar")
-    _, gx_dro, _ = pl.objective_and_grad(scen, mode="dro")
-    diff = float(np.abs(gx_dro - gx_cvar).max())
-    print(f"  max |g_dro - g_cvar| = {diff:.3e}")
-    assert diff > 1e-6, "DRO gradient is a no-op (regressed to CVaR-only)"
-
-    P0 = pl.dro_term(scen)
-    pl.optimize(scen, mode="dro", n_iter=12, lr=2e-2, verbose=False)
-    P1 = pl.dro_term(scen)
-    print(f"  DRO penalty  start={P0:.4f}  after DRO={P1:.4f}")
-    assert P1 < P0, "DRO did not reduce its worst-case-CVaR penalty"
 
 
 def test_smooth_hpwl_gradient(h=1e-7, tol=1e-6):
@@ -254,6 +171,42 @@ def test_smooth_hpwl_gradient(h=1e-7, tol=1e-6):
         exact += (cx[idx].max() - cx[idx].min()) + (cy[idx].max() - cy[idx].min())
     assert val >= exact - 1e-12, "surrogate should upper-bound exact HPWL"
     print(f"  smooth={val:.4f} exact={exact:.4f} overshoot={val - exact:.4f}")
+
+
+def test_position_gradient_hpwl(h=2e-3, tol=1e-4):
+    """Wirelength-only baseline mode (obj = wl_weight*smoothHPWL, no thermal): the
+    gradient is the pure smooth-HPWL gradient chained through the sigmoid, smooth
+    everywhere, so every probed coordinate is clean."""
+    from pyrova.objectives.wirelength import smooth_hpwl_grad
+    d, units, s = _solver()
+    rng = np.random.default_rng(4)
+    scen = [random_power_map(units, 50.0, rng) for _ in range(3)]
+    scen = [np.array([sc[u["name"]] for u in units]) for sc in scen]
+    n = len(units)
+    nets = [list(rng.choice(n, size=int(rng.integers(2, 6)), replace=False))
+            for _ in range(8)]
+    wl_w = 3.0e3
+    pl = DiffPlacer(s, units, d.chip_width, d.chip_height, 24, 24, alpha=0.75,
+                    nonoverlap_w=0.0, nets=nets, wl_weight=wl_w)
+    pl.raw_x += rng.standard_normal(pl.n) * 0.3
+    pl.raw_y += rng.standard_normal(pl.n) * 0.3
+    rx0, ry0 = pl.raw_x.copy(), pl.raw_y.copy()
+    obj0, g_rx, _ = pl.objective_and_grad(scen, mode="hpwl")
+    assert obj0 > 0, "hpwl-mode objective should be the (positive) wirelength"
+    pl.raw_x, pl.raw_y = rx0.copy(), ry0.copy()
+
+    def obj_value(rx):
+        cx = pl.cx_min + (pl.cx_max - pl.cx_min) / (1.0 + np.exp(-np.clip(rx, -50, 50)))
+        cy = pl.cy_min + (pl.cy_max - pl.cy_min) / (1.0 + np.exp(-np.clip(ry0, -50, 50)))
+        return wl_w * smooth_hpwl_grad(cx, cy, [np.asarray(nt) for nt in nets],
+                                       pl.wl_gamma)[0]
+
+    worst = 0.0
+    for i in np.argsort(-np.abs(g_rx))[:6]:
+        fd, _ = _fd_two_scale(obj_value, rx0, int(i), h)
+        worst = max(worst, abs(fd - g_rx[i]) / (abs(fd) + 1e-12))
+    print(f"  [hpwl] max rel error = {worst:.2e}")
+    assert worst < tol, f"hpwl-mode position gradient off (max rel {worst:.2e})"
 
 
 def test_position_gradient_wirelength(h=2e-3, tol=1e-4, min_clean=3):
@@ -297,6 +250,79 @@ def test_position_gradient_wirelength(h=2e-3, tol=1e-4, min_clean=3):
     print(f"  [wl] clean coords {n_clean}/6, max rel error = {worst_clean:.2e}")
     assert n_clean >= min_clean, f"wirelength: too few kink-free coordinates ({n_clean}/6)"
     assert worst_clean < tol, f"wirelength position gradient off (max clean rel {worst_clean:.2e})"
+
+
+def test_density_gradient_direct(h=1e-8, tol=1e-6):
+    """Density overflow penalty gradient vs central FD, in metre space (isolates
+    the penalty math from the placer chain). A coarse grid is used so overlapping
+    blocks clearly drive some bin over the legality target; away from the grid
+    breakpoints the penalty is piecewise-quadratic in position, so central FD is
+    near-exact."""
+    from pyrova.objectives.density import density_penalty
+    chip, nr, nc = 0.016, 8, 8
+    cx = np.array([0.0080, 0.0086, 0.0120])          # first two overlap; third breaks symmetry
+    cy = np.array([0.0080, 0.0083, 0.0120])
+    w = np.array([0.0030, 0.0030, 0.0030])
+    hgt = np.array([0.0030, 0.0030, 0.0030])
+    D, gx, gy = density_penalty(cx, cy, w, hgt, chip, chip, nr, nc, t=1.0)
+    assert D > 0.0, "test config must have an over-full bin (rho>t) or the check is vacuous"
+
+    def val_x(cc):
+        return density_penalty(cc, cy, w, hgt, chip, chip, nr, nc, t=1.0)[0]
+
+    def val_y(cc):
+        return density_penalty(cx, cc, w, hgt, chip, chip, nr, nc, t=1.0)[0]
+
+    worst_clean, n_clean = 0.0, 0
+    for b in range(len(cx)):
+        fd, kinked = _fd_two_scale(val_x, cx, b, h)
+        if not kinked:
+            n_clean += 1
+            worst_clean = max(worst_clean, abs(fd - gx[b]) / (abs(fd) + 1e-12))
+        fd, kinked = _fd_two_scale(val_y, cy, b, h)
+        if not kinked:
+            n_clean += 1
+            worst_clean = max(worst_clean, abs(fd - gy[b]) / (abs(fd) + 1e-12))
+    print(f"  [density] clean coords {n_clean}/6, max rel error = {worst_clean:.2e}")
+    assert n_clean >= 5, f"too few kink-free coords ({n_clean}/6) — reposition off lattice alignment"
+    assert worst_clean < tol, f"density gradient off (max clean rel {worst_clean:.2e})"
+
+
+def test_position_gradient_density(h=2e-3, tol=1e-4, min_clean=3):
+    """Density term chained through the sigmoid to the raw parameters. Isolated via
+    mode='hpwl' with zero wirelength and zero pairwise weight, so the objective is
+    exactly lambda_D * (bin-overflow penalty); the macros are squeezed together so
+    the term is active."""
+    from pyrova.objectives.density import density_penalty
+    d, units, s = _solver()
+    rng = np.random.default_rng(3)
+    scen = [np.array([random_power_map(units, 50.0, rng)[u["name"]] for u in units])
+            for _ in range(2)]
+    ndr = ndc = 16
+    pl = DiffPlacer(s, units, d.chip_width, d.chip_height, 24, 24,
+                    nonoverlap_w=0.0, density_w=1.0, density_grid=(ndr, ndc))
+    pl.raw_x = rng.standard_normal(pl.n) * 0.1          # cluster the macros so rho>t somewhere
+    pl.raw_y = rng.standard_normal(pl.n) * 0.1
+    rx0, ry0 = pl.raw_x.copy(), pl.raw_y.copy()
+    _, g_rx, _ = pl.objective_and_grad(scen, mode="hpwl", density_lambda=1.0)
+    pl.raw_x, pl.raw_y = rx0.copy(), ry0.copy()
+
+    def obj_value(rx):
+        cx = pl.cx_min + (pl.cx_max - pl.cx_min) / (1.0 + np.exp(-np.clip(rx, -50, 50)))
+        cy = pl.cy_min + (pl.cy_max - pl.cy_min) / (1.0 + np.exp(-np.clip(ry0, -50, 50)))
+        return density_penalty(cx, cy, pl.widths, pl.heights,
+                               pl.chip_w, pl.chip_h, ndr, ndc)[0]
+
+    idx = np.argsort(-np.abs(g_rx))[:6]
+    worst_clean, n_clean = 0.0, 0
+    for i in idx:
+        fd, kinked = _fd_two_scale(obj_value, rx0, int(i), h)
+        if not kinked:
+            n_clean += 1
+            worst_clean = max(worst_clean, abs(fd - g_rx[i]) / (abs(fd) + 1e-12))
+    print(f"  [density-chain] clean coords {n_clean}/6, max rel error = {worst_clean:.2e}")
+    assert n_clean >= min_clean, f"density chain: too few kink-free coords ({n_clean}/6)"
+    assert worst_clean < tol, f"density-mode position gradient off (max clean rel {worst_clean:.2e})"
 
 
 def test_weighted_cvar_uniform_equivalence():
@@ -346,18 +372,16 @@ if __name__ == "__main__":
     test_position_gradient_mean()
     print("test_position_gradient (cvar):")
     test_position_gradient_cvar()
-    print("test_position_gradient (dro):")
-    test_position_gradient_dro()
-    print("test_position_gradient (dro_exact):")
-    test_position_gradient_dro_exact()
     print("test_smooth_hpwl_gradient:")
     test_smooth_hpwl_gradient()
+    print("test_position_gradient (hpwl-only baseline):")
+    test_position_gradient_hpwl()
     print("test_position_gradient (wirelength):")
     test_position_gradient_wirelength()
-    print("test_dro_penalty_consistency:")
-    test_dro_penalty_consistency()
-    print("test_dro_has_teeth:")
-    test_dro_has_teeth()
+    print("test_density_gradient_direct:")
+    test_density_gradient_direct()
+    print("test_position_gradient (density):")
+    test_position_gradient_density()
     print("test_weighted_cvar_uniform_equivalence:")
     test_weighted_cvar_uniform_equivalence()
     print("\nALL CHECKS PASSED")

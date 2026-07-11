@@ -1,36 +1,13 @@
 """TeraPool 1024-core cluster: a real-geometry tiled-manycore testbed.
 
-TeraPool (PULP platform, GF 12 nm, 1024 RV32 cores in 128 tiles / 16 SubGroups
-/ 4 Groups) is the spatial-tile regime: many identical heavy compute blocks
-whose thermal risk, if any, comes from WHERE activity lands on the die.
-
-PROVENANCE (tags on every number):
-  [TP]   arXiv:2603.01629  TeraPool (physical design: SubGroup 3.03 mm^2,
-         cluster 81.8 mm^2, ~40% top-level routing, 0.68 mm inter-Group
-         channels; per-instr energies; remote-access overhead +10/+20/+58%)
-  [SDR]  arXiv:2408.08882  TeraPool-SDR (6G-SDR kernels; efficiencies
-         FFT 93 / beamforming 125 / channel-est 96 / matrix-inv 61 GOPS/W;
-         cluster < 8.8 W at the PUSCH point)
-  [MP]   arXiv:2303.17742  MemPool TC'23 (imbalance anchors: ray tracing 3%,
-         BFS 17% speedup lost to load imbalance; SPM clock gating cuts idle
-         bank energy 98%)
-  ALL THREE are post-layout PrimeTime estimates — NO SILICON EXISTS. Flags:
-  MEASURED here means "published post-layout number"; DERIVED/ASSUMED as noted.
-
-HONEST EXPECTATION (pre-registered in exp026, stated here so nobody reads
-this module as a favorable regime): the published workloads are SPMD across
-all cores — NO spatially structured per-tile activity variation is published
-anywhere [extraction 2026-07-08]. The only defensible per-SubGroup variation
-is RANDOM load imbalance (CV anchored to [MP]'s 3-17% imbalance losses),
-which is unstructured hotspot mobility — the project's i.i.d. regime, where
-the established verdict is "no separable tail dimension". exp026 therefore
-tests a PREDICTED NULL on real geometry; a positive would be a surprise.
-
-SCOPE CONTRACT: measurement-anchored MODEL (geometry and kernel-power ratios
-published; imbalance distribution, traffic mix, and mode duty cycles ASSUMED).
-Absolute watts are not published for TeraPool -> experiments rescale to a
-target peak dT via `calibrate_scale` (exp021 BOOM protocol); only relative
-structure is claimed.
+TeraPool (PULP, GF 12 nm, 1024 RV32 cores) is the spatial-tile regime: identical
+heavy blocks whose thermal risk comes only from where activity lands. Geometry and
+6G-SDR kernel-power ratios are published post-layout — NO SILICON (arXiv:2603.01629
+/ 2408.08882); per-tile imbalance (CV anchored to MemPool, arXiv:2303.17742),
+traffic, and duty cycles are ASSUMED. Published workloads are SPMD with no
+structured per-tile variation, so this is a PREDICTED NULL: only random imbalance
+moves the hotspot, which carries no separable tail dimension. Absolute watts are
+rescaled to a target peak dT via `calibrate_scale`; only relative structure is claimed.
 """
 
 from __future__ import annotations
@@ -41,7 +18,7 @@ import numpy as np
 # grid with 0.68 mm channels between Groups. Initial tiling: 4x4 SubGroups,
 # intra-Group pitch 1.84 mm (0.1 mm ASSUMED intra spacing), 0.68 mm channel
 # between Group halves. Cluster 81.8 mm^2 total (~9.05 mm square with ~40%
-# routing) — the placement box is the initial-tiling bbox per exp023 protocol.
+# routing) — the placement box is the initial-tiling bbox.
 _SG_MM = 1.74
 _GAP_IN = 0.10   # ASSUMED intra-group spacing
 _GAP_GR = 0.68   # inter-group channel [TP]
@@ -49,7 +26,7 @@ N_SG = 16
 
 # 6G-SDR kernel set [SDR]. Relative cluster power per kernel DERIVED as
 # 1/(GOPS/W) at equal delivered throughput (ASSUMPTION: kernels run at
-# comparable OP rates; IPC > 0.6 for all [SDR]) — normalized to beamforming:
+# comparable OP rates; IPC > 0.6 for all [SDR]) — normalised to beamforming:
 #   FFT 125/93=1.344, chest 125/96=1.302, beamf 1.000, matinv 125/61=2.049.
 # idle: SPM clock gating cuts idle bank energy 98% [MP]; residual ASSUMED 5%.
 _KERNELS = {
@@ -59,7 +36,7 @@ _KERNELS = {
     "matinv": 2.049,
     "idle":   0.050,
 }
-# Duty cycles not published — PUSCH-pipeline-ish mix ASSUMED (exp026 prints it).
+# Duty cycles not published — PUSCH-pipeline-ish mix ASSUMED.
 _KERNEL_PROBS = {"fft": 0.25, "chest": 0.20, "beamf": 0.20, "matinv": 0.15,
                  "idle": 0.20}
 
@@ -68,7 +45,7 @@ def terapool_units() -> list[dict]:
     """16 SubGroup macros (metres), 4x4 with the inter-Group channel gaps.
 
     Blocks are identical by construction [TP]; the placer may rearrange them
-    inside the initial-tiling bbox (exp023 protocol).
+    inside the initial-tiling bbox.
     """
     units = []
     sg = _SG_MM * 1e-3
@@ -87,7 +64,7 @@ class TeraPoolWorkloadModel:
 
     Per scenario: kernel k (mixture), traffic level t ~ U(0.4, 1.0) [ASSUMED
     base-station load variation], per-SubGroup imbalance multipliers m_i
-    (lognormal, CV=`imbalance_cv`, renormalized to mean 1 so imbalance moves
+    (lognormal, CV=`imbalance_cv`, renormalised to mean 1 so imbalance moves
     power around without changing the total [MP: imbalance redistributes
     work]). Power_i = rel[k] * t * m_i / N_SG, times `scale`.
     """
@@ -130,7 +107,8 @@ class TeraPoolWorkloadModel:
         return out
 
     def regime_stats(self, n: int = 4000, seed: int = 12345) -> dict:
-        """Regime statistics to print with any exp026 run."""
+        """Regime statistics to report with any placement comparison on this
+        model."""
         rng = np.random.default_rng(seed)
         saved, self.rng = self.rng, rng
         try:

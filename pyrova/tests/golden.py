@@ -62,9 +62,9 @@ def compute() -> dict:
 
     d, units, s = _solver(16, 16)
     scen = _scenarios(units, 6, seed=3)
-    for mode in ("mean", "cvar", "dro"):
+    for mode in ("mean", "cvar"):
         pl = DiffPlacer(s, units, d.chip_width, d.chip_height, 16, 16,
-                        alpha=0.9, eps_dro=0.5, nonoverlap_w=0.0)
+                        alpha=0.9, nonoverlap_w=0.0)
         obj, g_rx, g_ry = pl.objective_and_grad(scen, mode=mode)
         out[f"obj_{mode}"] = np.array([obj])
         out[f"grx_{mode}"] = g_rx

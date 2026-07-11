@@ -11,8 +11,7 @@ if TYPE_CHECKING:
 def nonoverlap_penalty(cx: np.ndarray, cy: np.ndarray,
                        widths: np.ndarray, heights: np.ndarray,
                        gap: float = 0.0) -> tuple[float, np.ndarray, np.ndarray]:
-    """Sum of pairwise rectangle-overlap areas (plus `gap` margin) and its exact
-    gradient. Returns (penalty, grad_cx, grad_cy) w.r.t. macro centres."""
+    """Sum of pairwise rectangle-overlap areas (plus `gap` keep-out margin) [m^2] and its exact gradient; returns (penalty, grad_cx, grad_cy) w.r.t. centres."""
     n = len(cx)
     pen = 0.0
     gcx = np.zeros(n)
@@ -35,12 +34,7 @@ def nonoverlap_penalty(cx: np.ndarray, cy: np.ndarray,
 
 def overlap_penalty(design: "Design",
                     gap: float = 0.0) -> tuple[float, np.ndarray, np.ndarray]:
-    """
-    Soft non-overlap penalty for a Design.
-
-    Returns (penalty, grad_cx, grad_cy) where the gradients are w.r.t. macro
-    centre coordinates, in macro index order (same ordering as design.macros).
-    """
+    """Soft non-overlap penalty for a Design; returns (penalty, grad_cx, grad_cy) w.r.t. macro centres."""
     cx = np.array([m.centre_x for m in design.macros])
     cy = np.array([m.centre_y for m in design.macros])
     widths  = np.array([m.width  for m in design.macros])

@@ -1,29 +1,13 @@
-"""Differentiable floorplanner: Adam over sigmoid-bounded macro centres, with
-thermal gradients from the adjoint solve.
-
-Modes: 'mean' (expected peak dT), 'cvar' (empirical CVaR of peak dT), 'blend'
-((1-gamma)*mean + gamma*CVaR — mean-anchored shrinkage of the noisy empirical
-tail; gamma=blend_gamma), 'dro' (CVaR plus the tail-data approximation of the
-type-1 Wasserstein penalty; historical — see objectives/dro.py caveats), and
-'dro_exact' (CVaR plus the CERTIFIED global-Lambda dual penalty, optionally
-Mahalanobis-scaled via dro_sigma; analytic gradient, no finite differences —
-DRO_DERIVATION.md "Answers" 1-3).
-
-Every mode optionally carries a wirelength term: with `nets` and `wl_weight>0`
-the objective becomes (thermal term) + wl_weight*smoothHPWL, i.e. the
-wirelength-penalised placement problem (Phase 3). With wl_weight=0 the placer
-reproduces the historical unconstrained thermal optimisation exactly.
-"""
+"""Differentiable floorplanner: Adam over sigmoid-bounded macro centres, driven by adjoint thermal gradients."""
 
 from __future__ import annotations
 
 import numpy as np
 
 from pyrova.thermal.fd_solver import GridFDSolver
-from pyrova.objectives.dro import (wasserstein_cvar_penalty, si_adjoint_rows,
-                                   exact_penalty_terms)
 from pyrova.objectives.overlap import nonoverlap_penalty
 from pyrova.objectives.wirelength import smooth_hpwl_grad
+from pyrova.objectives.density import density_penalty, density_weight_ramp
 
 
 # Helpers
@@ -54,16 +38,7 @@ def sigmoid_vec(x: np.ndarray) -> np.ndarray:
 
 def cvar_and_grad(peaks: np.ndarray, alpha: float,
                   weights: np.ndarray | None = None) -> tuple[float, np.ndarray]:
-    """CVaR_alpha and its (frozen-tail-mask) gradient w.r.t. each peak.
-
-    CVaR_alpha = inf_tau {tau + E[(M-tau)_+]/(1-alpha)}, estimated empirically.
-    The differentiable sibling of ``evaluation.metrics.cvar``. With `weights`
-    (per-scenario probability weights, normalised internally) the tail is the
-    top (1-alpha) of probability MASS (boundary scenario fractional):
-    val = sum(phi_i * peak_i) / (1-alpha), grad_i = phi_i / (1-alpha), with
-    phi_i the included mass. Uniform weights reproduce the unweighted estimator
-    whenever (1-alpha)*N is an integer (no ties).
-    """
+    """CVaR_alpha and its frozen-tail-mask gradient w.r.t. each peak; returns (CVaR, grad)."""
     if weights is None:
         q = np.quantile(peaks, alpha)
         mask = peaks >= q
@@ -91,16 +66,7 @@ def cvar_and_grad(peaks: np.ndarray, alpha: float,
 
 
 def cvar_jackknife_and_grad(peaks: np.ndarray, alpha: float) -> tuple[float, np.ndarray]:
-    """Jackknife bias-corrected CVaR and its gradient w.r.t. each peak.
-
-    The empirical CVaR is optimistically biased at finite N: minimising it lets
-    the placer exploit sample-tail noise, so the trained placement generalises
-    worse than mean-training (the small-N D*<0 effect). The jackknife estimate
-    CVaR_jk = N*CVaR - (N-1)*mean_i CVaR^(-i) removes the leading O(1/N) bias.
-
-    WARNING: O(N^2) — leave-one-out recomputes the tail N times. Intended for the
-    small-N training regime it targets, not oracle-scale N.
-    """
+    """Jackknife bias-corrected CVaR and its gradient; returns (CVaR_jk, grad). O(N^2) — small-N training only."""
     peaks = np.asarray(peaks, dtype=float)
     n = len(peaks)
     v_full, g_full = cvar_and_grad(peaks, alpha)
@@ -123,31 +89,17 @@ def cvar_jackknife_and_grad(peaks: np.ndarray, alpha: float) -> tuple[float, np.
 # Placer
 
 class DiffPlacer:
-    """Adam floorplanner over sigmoid-bounded macro centres.
-
-    Parameters
-    ----------
-    solver       : GridFDSolver (built + factorized)
-    units_orig   : original block list (unit dicts)
-    chip_w/h     : chip dimensions [m]
-    nr, nc       : thermal grid resolution
-    alpha        : CVaR tail probability (default 0.9)
-    eps_dro      : Wasserstein ball radius for the worst-case-CVaR penalty (default 0)
-    nonoverlap_w : soft non-overlap penalty weight
-    fd_delta_dro : finite-difference step for the DRO sensitivity term [m]
-
-    WARNING: the non-overlap penalty is measured in area units (m^2), so
-    `nonoverlap_w` must be re-scaled if the chip/block dimensions change —
-    otherwise it no longer balances the thermal (K) objective term.
-    """
+    """Adam floorplanner over sigmoid-bounded macro centres; nonoverlap_w is in area units (m^2) and must rescale with chip/block dimensions."""
 
     def __init__(self, solver: GridFDSolver, units_orig: list[dict],
                  chip_w: float, chip_h: float, nr: int, nc: int,
-                 alpha: float = 0.9, eps_dro: float = 0.0,
-                 blend_gamma: float = 0.5, dro_sigma: np.ndarray | None = None,
-                 nonoverlap_w: float = 1e4, fd_delta_dro: float = 1e-6,
+                 alpha: float = 0.9, blend_gamma: float = 0.5,
+                 nonoverlap_w: float = 1e4,
                  nets: list | None = None, wl_weight: float = 0.0,
-                 wl_gamma: float | None = None):
+                 wl_gamma: float | None = None,
+                 density_w: float = 0.0, density_lam0: float = 0.0,
+                 density_grid: tuple[int, int] | None = None,
+                 density_t: float = 1.0):
         self.solver = solver
         self.units_orig = units_orig
         self.chip_w = chip_w
@@ -155,22 +107,30 @@ class DiffPlacer:
         self.nr = nr
         self.nc = nc
         self.alpha = alpha
-        self.eps_dro = eps_dro
         self.blend_gamma = blend_gamma
-        self.dro_sigma = None if dro_sigma is None else np.asarray(dro_sigma, dtype=float)
         self.nonoverlap_w = nonoverlap_w
-        self.fd_delta_dro = fd_delta_dro
-        self._lam_rows = None      # cached per-Si-node adjoints (dro_exact)
 
-        # Wirelength constraint (Phase 3). `nets` is a list of nets, each a list
-        # of macro indices into units_orig; `wl_weight` (>0) adds the smooth-HPWL
-        # term wl_weight*smoothHPWL to every mode's objective, turning the
-        # unconstrained thermal problem into the wirelength-penalised one. The
-        # smoothing length wl_gamma defaults to 1% of the mean chip span.
+        # `nets`: list of nets, each a list of macro indices into units_orig.
+        # wl_weight>0 adds wl_weight*smoothHPWL to every mode's objective, turning
+        # the unconstrained thermal problem into the wirelength-penalised one.
+        # wl_gamma (smoothing length) defaults to 1% of the mean chip span.
         self.nets = [np.asarray(net, dtype=int) for net in nets] if nets else []
         self.wl_weight = wl_weight
         self.wl_gamma = (wl_gamma if wl_gamma is not None
                          else 0.01 * 0.5 * (chip_w + chip_h))
+
+        # Bin-overflow spreading term for legality. density_w>0 is the peak weight
+        # of the penalty, ramped from density_lam0 over the optimiser iterations.
+        # It supplements — never replaces — the pairwise non-overlap contact term,
+        # which remains the sub-bin symmetry-breaker. density_grid defaults to the
+        # thermal grid; a coarse grid has a sub-bin blind spot, so under wirelength
+        # pressure prefer a grid whose bins are no larger than the smallest macro.
+        # density_w is in K-equivalent units and, like nonoverlap_w, must be
+        # re-scaled if the chip/block dimensions or the density grid change.
+        self.density_w = density_w
+        self.density_lam0 = density_lam0
+        self.density_grid = density_grid
+        self.density_t = density_t
 
         self.n = len(units_orig)
         self.widths = np.array([u["width"] for u in units_orig])
@@ -203,8 +163,7 @@ class DiffPlacer:
         return _make_units(self.units_orig, cx, cy)
 
     def wirelength(self, exact: bool = True) -> float:
-        """Current HPWL over self.nets [m]: exact bounding-box (default) or the
-        smooth log-sum-exp surrogate. Returns 0.0 when no nets are set."""
+        """Current HPWL over self.nets [m]: exact bounding-box (default) or smooth surrogate; 0.0 with no nets."""
         if not self.nets:
             return 0.0
         cx, cy = self.get_positions()
@@ -221,16 +180,6 @@ class DiffPlacer:
     def reset(self) -> None:
         self.raw_x, self.raw_y = self._encode_original()
 
-    # DRO sensitivity terms
-
-    def _dro_lipschitz(self, cx: np.ndarray, cy: np.ndarray, pw: np.ndarray) -> float:
-        """Power-sensitivity norm ||d(peak)/d(power)|| at a given scenario power."""
-        self.solver.units = _make_units(self.units_orig, cx, cy)
-        bp = {u["name"]: float(pw[b]) for b, u in enumerate(self.units_orig)}
-        _, g_dict = self.solver.peak_T_gradient(bp)
-        g = np.array([g_dict.get(u["name"], 0.0) for u in self.units_orig])
-        return float(np.linalg.norm(g))
-
     def _scenario_peaks(self, cx, cy, scenario_powers) -> np.ndarray:
         """Per-scenario peak dT at the given placement."""
         T_amb = self.solver.cfg["ambient"]
@@ -240,72 +189,18 @@ class DiffPlacer:
             peaks[s] = float(self.solver.silicon_layer(T).max()) - T_amb
         return peaks
 
-    def _dro_penalty_at(self, cx, cy, peaks, scenario_powers):
-        """DRO penalty value and the worst-case tail scenario index.
-
-        Power-sensitivity is evaluated only on the CVaR tail; the tail scenario
-        with the largest norm sets the Wasserstein penalty and the gradient.
-        """
-        q = np.quantile(peaks, self.alpha)
-        tail = np.where(peaks >= q)[0]
-        gnorms = np.zeros(len(scenario_powers))
-        worst_i, worst = int(tail[0]), -1.0
-        for s in tail:
-            gnorms[s] = self._dro_lipschitz(cx, cy, scenario_powers[s])
-            if gnorms[s] > worst:
-                worst, worst_i = gnorms[s], int(s)
-        pen = wasserstein_cvar_penalty(peaks, gnorms, self.eps_dro, self.alpha)
-        return pen, worst_i
-
-    def dro_term(self, scenario_powers: list[np.ndarray]) -> float:
-        """Worst-case-CVaR DRO penalty at the current placement (0 if eps_dro<=0)."""
-        if self.eps_dro <= 0.0:
-            return 0.0
-        cx, cy = self.get_positions()
-        peaks = self._scenario_peaks(cx, cy, scenario_powers)
-        return self._dro_penalty_at(cx, cy, peaks, scenario_powers)[0]
-
-    def dro_exact_term(self) -> float:
-        """Certified global-Lambda penalty eps/(1-alpha)*max_i ||D a_i(p)|| at the
-        current placement (scenario-independent; 0 if eps_dro<=0)."""
-        if self.eps_dro <= 0.0:
-            return 0.0
-        if self._lam_rows is None:
-            self._lam_rows = si_adjoint_rows(self.solver)
-        cx, cy = self.get_positions()
-        self.solver.units = _make_units(self.units_orig, cx, cy)
-        Lam, _, _ = exact_penalty_terms(self.solver, self._lam_rows, self.dro_sigma)
-        return self.eps_dro / (1.0 - self.alpha) * Lam
-
-    def tail_sensitivity(self, scenario_powers: list[np.ndarray]) -> float:
-        """Worst-case ||d(peak)/d(power)|| over the CVaR tail (K/W), independent of
-        eps_dro. This is the Lambda the DRO penalty scales."""
-        cx, cy = self.get_positions()
-        peaks = self._scenario_peaks(cx, cy, scenario_powers)
-        q = np.quantile(peaks, self.alpha)
-        tail = np.where(peaks >= q)[0]
-        return max(self._dro_lipschitz(cx, cy, scenario_powers[s]) for s in tail)
-
     # Objective + gradient
 
     def objective_and_grad(self, scenario_powers: list[np.ndarray],
-                           mode: str = "dro",
+                           mode: str = "cvar",
                            weights: np.ndarray | None = None,
-                           offset: tuple[float, float] = (0.0, 0.0)
+                           offset: tuple[float, float] = (0.0, 0.0),
+                           density_lambda: float | None = None
                            ) -> tuple[float, np.ndarray, np.ndarray]:
-        """Objective and (grad_raw_x, grad_raw_y) for mode in
-        {'mean','cvar','blend','dro','dro_exact'}.
-
-        scenario_powers : list of arrays shape (n_blocks,) [W].
-        weights         : optional per-scenario probability weights (all modes
-                          except 'dro'). The adjoint per scenario is unchanged;
-                          only the outer aggregation over scenarios is weighted.
-        """
-        if weights is not None and mode == "dro":
-            raise ValueError("weighted scenarios are not supported for mode='dro'")
+        """Objective and gradients w.r.t. the raw pre-sigmoid parameters; returns (obj, grad_raw_x, grad_raw_y)."""
         solver = self.solver
         cx, cy = self.get_positions()
-        # Rasterization jitter regularizes against training-grid overfitting: a
+        # Rasterisation jitter regularises against training-grid overfitting: a
         # rigid sub-cell shift of the whole floorplan relative to the grid.
         # Gradients are w.r.t. the shifted positions, which equal d/d(cx) since
         # the offset is constant. Edge blocks may lose a sliver of power
@@ -345,6 +240,8 @@ class DiffPlacer:
             mean_val, d_mean = float((w * peaks).sum()), w
         if mode == "mean":
             obj_t, d_peaks = mean_val, d_mean
+        elif mode == "hpwl":                 # wirelength-only baseline (no thermal term)
+            obj_t, d_peaks = 0.0, np.zeros(N_scen)
         elif mode == "blend":
             g = self.blend_gamma
             c_val, d_c = cvar_and_grad(peaks, self.alpha, weights=weights)
@@ -352,24 +249,8 @@ class DiffPlacer:
             d_peaks = (1.0 - g) * d_mean + g * d_c
         elif mode == "cvar_bc":
             obj_t, d_peaks = cvar_jackknife_and_grad(peaks, self.alpha)
-        else:  # cvar, dro, dro_exact
+        else:  # cvar
             obj_t, d_peaks = cvar_and_grad(peaks, self.alpha, weights=weights)
-
-        L_pen = 0.0
-        do_dro = mode == "dro" and self.eps_dro > 0.0
-        if do_dro:
-            L_pen, worst_i = self._dro_penalty_at(cx, cy, peaks, scenario_powers)
-            dro_pw = scenario_powers[worst_i]
-            dro_w = self.eps_dro / (1.0 - self.alpha)   # penalty = eps/(1-alpha) * Lambda
-        do_dxx = mode == "dro_exact" and self.eps_dro > 0.0
-        if do_dxx:
-            if self._lam_rows is None:
-                self._lam_rows = si_adjoint_rows(solver)
-            solver.units = _make_units(self.units_orig, cx, cy)
-            Lam, i_star, a_star = exact_penalty_terms(solver, self._lam_rows,
-                                                      self.dro_sigma)
-            dxx_w = self.eps_dro / (1.0 - self.alpha)   # penalty = eps/(1-alpha) * Lambda
-            L_pen = dxx_w * Lam
 
         # Thermal gradient via adjoint: d(obj)/d(c_b) = sum_s d_peaks[s] * lam_s^T dQ_s/d(c_b).
         # WARNING: the per-scenario peak cell (peak_si_flat) and the CVaR tail
@@ -386,7 +267,7 @@ class DiffPlacer:
             # adjoint: G^T lam = e_{i*}
             dL_dT = np.zeros(N)
             dL_dT[solver._nidx(solver.SI, pi, pj)] = 1.0
-            lam = solver.adjoint_dT_dQ(dL_dT)
+            lam = solver.adjoint_solve(dL_dT)
 
             bp = {u["name"]: float(scenario_powers[s][b]) for b, u in enumerate(self.units_orig)}
             dcx, dcy = solver.rhs_position_grad(lam, bp)
@@ -395,37 +276,9 @@ class DiffPlacer:
                 g_cx[b] += scale * dcx[u["name"]]
                 g_cy[b] += scale * dcy[u["name"]]
 
-        # Exact-dual penalty gradient (analytic): penalty = eps/(1-alpha) *
-        # ||D a_{i*}(p)||_2 with i* frozen (envelope), a_i = A(p)^T lam_i.
-        # Component b of a_{i*} depends on positions only through block b's own
-        # overlap column, and its derivative is rhs_position_grad at unit power.
-        if do_dxx and Lam > 0.0:
-            s2 = np.ones(self.n) if self.dro_sigma is None else self.dro_sigma ** 2
-            coef = dxx_w * (s2 * a_star) / Lam
-            ones = {u["name"]: 1.0 for u in self.units_orig}
-            dcx_a, dcy_a = solver.rhs_position_grad(self._lam_rows[i_star], ones)
-            for b, u in enumerate(self.units_orig):
-                g_cx[b] += coef[b] * dcx_a[u["name"]]
-                g_cy[b] += coef[b] * dcy_a[u["name"]]
-
-        # DRO term gradient: central FD of the worst-tail sensitivity scalar. The
-        # tail set / worst scenario are frozen (envelope theorem), as cvar_and_grad
-        # freezes the tail mask.
-        if do_dro:
-            dL = self.fd_delta_dro
-            for b in range(self.n):
-                cxp = cx.copy(); cxp[b] += dL
-                cxm = cx.copy(); cxm[b] -= dL
-                g_cx[b] += dro_w * (self._dro_lipschitz(cxp, cy, dro_pw)
-                                    - self._dro_lipschitz(cxm, cy, dro_pw)) / (2.0 * dL)
-                cyp = cy.copy(); cyp[b] += dL
-                cym = cy.copy(); cym[b] -= dL
-                g_cy[b] += dro_w * (self._dro_lipschitz(cx, cyp, dro_pw)
-                                    - self._dro_lipschitz(cx, cym, dro_pw)) / (2.0 * dL)
-
-        # Wirelength term (Phase 3): wl_weight * smooth-HPWL over the netlist.
-        # HPWL is translation-invariant, so the rasterization offset (a rigid
-        # shift) does not affect it; its gradient adds directly to the centres.
+        # Wirelength term: wl_weight * smooth-HPWL over the netlist. HPWL is
+        # translation-invariant, so the rasterisation offset (a rigid shift) does
+        # not affect it; its gradient adds directly to the centres.
         L_wl = 0.0
         if self.wl_weight > 0.0 and self.nets:
             wl_val, g_cx_wl, g_cy_wl = smooth_hpwl_grad(cx, cy, self.nets, self.wl_gamma)
@@ -433,9 +286,24 @@ class DiffPlacer:
             g_cx += self.wl_weight * g_cx_wl
             g_cy += self.wl_weight * g_cy_wl
 
+        # Density spreading term: a global bin-overflow field on the same jittered
+        # centres as the thermal solve, weighted by the ramped weight supplied per
+        # iteration. Graded (weak early / strong late) so it never freezes the
+        # placer the way a stiff pairwise weight would.
+        L_dens = 0.0
+        lamD = self.density_w if density_lambda is None else density_lambda
+        if lamD > 0.0:
+            ndr, ndc = self.density_grid or (self.nr, self.nc)
+            D_val, g_cx_d, g_cy_d = density_penalty(
+                cx, cy, self.widths, self.heights, self.chip_w, self.chip_h,
+                ndr, ndc, t=self.density_t)
+            L_dens = lamD * D_val
+            g_cx += lamD * g_cx_d
+            g_cy += lamD * g_cy_d
+
         # Soft non-overlap penalty (shared with objectives.overlap).
         pen, gcx_no, gcy_no = nonoverlap_penalty(cx, cy, self.widths, self.heights)
-        obj = obj_t + L_pen + L_wl + self.nonoverlap_w * pen
+        obj = obj_t + L_wl + L_dens + self.nonoverlap_w * pen
 
         # Chain rule to the raw (pre-sigmoid) parameters.
         g_rx = (g_cx + self.nonoverlap_w * gcx_no) * dcx_draw
@@ -446,17 +314,12 @@ class DiffPlacer:
 
     # Optimiser
 
-    def optimize(self, scenario_powers: list[np.ndarray], mode: str = "dro",
+    def optimize(self, scenario_powers: list[np.ndarray], mode: str = "cvar",
                  n_iter: int = 150, lr: float = 1e-2, verbose: bool = True,
                  weights: np.ndarray | None = None,
-                 raster_jitter: float = 0.0, jitter_seed: int = 0) -> list[float]:
-        """Adam optimiser. Returns the per-iteration objective history.
-
-        raster_jitter > 0 draws a fresh rigid sub-cell offset each iteration
-        (uniform in +-raster_jitter/2 cells) so placements cannot lock onto
-        the rasterization grid, regularizing against training-grid
-        overfitting. Default 0.0 reproduces the historical optimiser exactly.
-        """
+                 raster_jitter: float = 0.0, jitter_seed: int = 0,
+                 callback=None) -> list[float]:
+        """Adam optimiser; returns the per-iteration objective history."""
         beta1, beta2, eps_a = 0.9, 0.999, 1e-8
         n = self.n
         m_rx = np.zeros(n); v_rx = np.zeros(n)
@@ -470,8 +333,10 @@ class DiffPlacer:
             off = ((float(jrng.uniform(-0.5, 0.5)) * cw * raster_jitter,
                     float(jrng.uniform(-0.5, 0.5)) * ch * raster_jitter)
                    if jrng is not None else (0.0, 0.0))
+            lamD_it = density_weight_ramp(it, n_iter, self.density_lam0, self.density_w)
             obj, g_rx, g_ry = self.objective_and_grad(scenario_powers, mode,
-                                                      weights=weights, offset=off)
+                                                      weights=weights, offset=off,
+                                                      density_lambda=lamD_it)
             history.append(obj)
 
             m_rx = beta1 * m_rx + (1 - beta1) * g_rx
@@ -484,9 +349,19 @@ class DiffPlacer:
             self.raw_x -= lr * (m_rx / bc1) / (np.sqrt(v_rx / bc2) + eps_a)
             self.raw_y -= lr * (m_ry / bc1) / (np.sqrt(v_ry / bc2) + eps_a)
 
+            if callback is not None:                 # per-iteration state for viz/logging
+                callback(it, self, obj)
+
             if verbose and (it == 1 or it % 25 == 0 or it == n_iter):
                 cx, cy = self.get_positions()
                 pen, _, _ = nonoverlap_penalty(cx, cy, self.widths, self.heights)
-                print(f"  iter {it:4d}  obj={obj:.4f}  overlap_pen={pen:.4e}")
+                extra = ""
+                if self.density_w > 0.0:
+                    ndr, ndc = self.density_grid or (self.nr, self.nc)
+                    d_over = density_penalty(cx, cy, self.widths, self.heights,
+                                             self.chip_w, self.chip_h, ndr, ndc,
+                                             t=self.density_t)[0]
+                    extra = f"  density_over={d_over:.4e}  lamD={lamD_it:.3e}"
+                print(f"  iter {it:4d}  obj={obj:.4f}  overlap_pen={pen:.4e}{extra}")
 
         return history

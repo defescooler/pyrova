@@ -6,12 +6,7 @@ import scipy.stats
 
 
 def _weighted_tail(x: np.ndarray, w: np.ndarray, alpha: float) -> tuple[np.ndarray, np.ndarray]:
-    """Samples sorted by descending loss with their included tail mass.
-
-    Returns (xs, phi). phi_i: fractional tail mass of sample i (the boundary
-    atom enters fractionally), sum(phi) = 1-alpha (up to the total available
-    mass).
-    """
+    """Samples sorted by descending loss with each one's fractional tail mass; returns (xs, phi)."""
     order = np.argsort(-x)
     xs, ws = x[order], w[order]
     m = 1.0 - alpha
@@ -21,22 +16,7 @@ def _weighted_tail(x: np.ndarray, w: np.ndarray, alpha: float) -> tuple[np.ndarr
 
 
 def cvar(x, alpha: float, weights=None) -> float:
-    """
-    Empirical CVaR_alpha (mean of the worst (1-alpha) tail).
-
-    x       : 1-D array-like of samples
-    alpha   : tail level (e.g. 0.90 -> the worst 10%)
-    weights : optional per-sample probability weights (normalised internally).
-              With weights, CVaR is the weighted average of the top (1-alpha)
-              of probability MASS, the boundary sample included fractionally.
-              With uniform weights this equals the unweighted estimator whenever
-              (1-alpha)*N is an integer (no ties) — e.g. N=40, alpha=0.9.
-
-    WARNING: the unweighted (quantile-mask) branch averages the ceil(N(1-alpha))
-    worst samples, so its effective tail fraction is nominal only when (1-alpha)N
-    is integral; at small N it exceeds alpha (e.g. 12.5% at N=16, alpha=0.9). Pass
-    weights for the exact fractional-boundary tail.
-    """
+    """Empirical CVaR_alpha (mean of the worst 1-alpha tail); optional weights give the exact fractional tail."""
     x = np.asarray(x, dtype=float)
     if weights is None:
         q = np.quantile(x, alpha)
@@ -50,16 +30,7 @@ def cvar(x, alpha: float, weights=None) -> float:
 
 
 def mean_cvar(x, alpha: float, weights=None) -> tuple[float, float]:
-    """
-    Empirical (mean, CVaR_alpha) of the same samples in one pass.
-
-    Reporting both sides by side de-confounds a CVaR-only comparison: a
-    placement that lowers CVaR while raising the mean is trading mean for tail
-    (a genuine risk dimension); one that raises both is simply dominated.
-
-    weights : optional per-sample probability weights (see `cvar`); the mean
-              becomes the weighted mean.
-    """
+    """Empirical (mean, CVaR_alpha) of the same samples in one pass; optional per-sample weights."""
     x = np.asarray(x, dtype=float)
     if weights is None:
         return float(x.mean()), cvar(x, alpha)
@@ -69,11 +40,7 @@ def mean_cvar(x, alpha: float, weights=None) -> tuple[float, float]:
 
 
 def ci95_t(x) -> tuple[float, float, float, float]:
-    """
-    Two-sided 95% t-interval for the mean.
-
-    Returns (mean, std_ddof1, lo, hi).
-    """
+    """Two-sided 95% t-interval for the mean. Returns (mean, std_ddof1, lo, hi)."""
     x = np.asarray(x, dtype=float)
     n = len(x)
     m = x.mean()
@@ -84,17 +51,7 @@ def ci95_t(x) -> tuple[float, float, float, float]:
 
 
 def ci95_nadeau_bengio(x, test_over_train: float) -> tuple[float, float, float, float]:
-    """95% t-interval for the mean of J repeated random-subsampling estimates,
-    with the Nadeau-Bengio (2003) variance correction.
-
-    Repeated train/test splits of ONE fixed dataset are positively correlated
-    (every pair of splits shares data), so the naive s/sqrt(J) standard error
-    understates the variance and the plain t-CI is anti-conservative. The
-    correction inflates it: NB SE = s*sqrt(1/J + n_te/n_tr), with
-    test_over_train = n_te/n_tr.
-
-    Returns (mean, std_ddof1, lo, hi).
-    """
+    """95% t-interval for J correlated repeated-split estimates via the Nadeau-Bengio variance correction (test_over_train = n_te/n_tr); returns (mean, std_ddof1, lo, hi)."""
     x = np.asarray(x, dtype=float)
     n = len(x)
     m = x.mean()
@@ -105,8 +62,7 @@ def ci95_nadeau_bengio(x, test_over_train: float) -> tuple[float, float, float, 
 
 
 def paired_t_p(x) -> float:
-    """Two-sided p-value of the one-sample t-test for mean(x) == 0 (the paired
-    test when x is a vector of per-seed differences)."""
+    """Two-sided p-value of the one-sample t-test for mean(x) == 0 (paired test over per-seed differences)."""
     x = np.asarray(x, dtype=float)
     n = len(x)
     s = x.std(ddof=1)
@@ -117,10 +73,7 @@ def paired_t_p(x) -> float:
 
 
 def holm(pvals, alpha: float = 0.05) -> list[bool]:
-    """Holm-Bonferroni step-down: which of the family of p-values stay
-    significant at familywise level alpha. Use whenever a sweep reports
-    per-cell significance stars — a '>=1 of many cells' verdict without this
-    has familywise error ~ 1-(1-alpha)^m, not alpha."""
+    """Holm-Bonferroni step-down: which family p-values stay significant at familywise level alpha."""
     p = np.asarray(pvals, dtype=float)
     m = len(p)
     order = np.argsort(p)

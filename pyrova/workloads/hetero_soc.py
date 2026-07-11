@@ -1,27 +1,4 @@
-"""Stylised heterogeneous-SoC testbed: the regime the theory's mechanism
-predicts risk-aware placement should pay off in.
-
-Motivation (mechanism-driven, not outcome-driven): exp009 showed the theory's
-required anti-correlation exists in real workloads but was thermally
-weightless on a small core (FP ~1.5% of power). The mechanism needs
-anti-correlated clusters that are each HEAVY enough to own the hotspot. That
-is the everyday situation on heterogeneous SoCs — different workload classes
-light different high-power engines (game -> GPU, ML inference -> NPU,
-compile -> CPU, video -> codec). This module encodes that regime in a
-deliberately stylised form:
-
-  * Blocks: a laptop-class SoC block list with areas/aspect ratios and
-    per-engine max powers in plausible TDP-class ranges (stylised — no
-    specific product is modelled).
-  * Modes: workload classes as activity vectors over engines, each mode
-    driving a DIFFERENT heavy engine near its max.
-
-SCOPE CONTRACT: this is an ENGINEERED FAVORABLE REGIME. Results on it are
-existence/upper-bound statements ("risk-aware placement can pay this much
-under these conditions"), never prevalence statements about real chips. The
-testbed has a built-in validity gate (exp023): the hotspot must actually move
-across modes, otherwise the regime construction failed and no verdict prints.
-"""
+"""Stylised heterogeneous-SoC testbed where anti-correlated heavy engines give risk-aware placement its mechanism; an engineered favorable regime, existence claims only."""
 
 from __future__ import annotations
 import numpy as np
@@ -60,11 +37,7 @@ _MODE_PROBS = {"game": 0.15, "ml_infer": 0.15, "compile": 0.15, "video": 0.20,
 
 
 def soc_units() -> list[dict]:
-    """Block list as solver unit dicts (metres), tiled left-to-right rows.
-
-    The initial tiling is arbitrary (the placer moves blocks); only sizes and
-    the chip bounding box matter.
-    """
+    """Block list as solver unit dicts (metres), tiled left-to-right; only sizes and the chip box matter (the placer moves blocks)."""
     units, x, y, row_h, chip_w = [], 0.0, 0.0, 0.0, 11.5e-3
     for name, w_mm, h_mm, _ in _BLOCKS:
         w, h = w_mm * 1e-3, h_mm * 1e-3
@@ -78,8 +51,7 @@ def soc_units() -> list[dict]:
 
 
 class HeteroSoCWorkloadModel:
-    """Mode-mixture sampler over the stylised SoC (same API as the other
-    workload models: ``sample(n) -> list of power arrays in units order``)."""
+    """Mode-mixture sampler over the stylised SoC; sample(n) -> list of power arrays in units order."""
 
     def __init__(self, units: list[dict], seed: int = 0, noise: float = 0.15):
         self.units = units
@@ -104,7 +76,7 @@ class HeteroSoCWorkloadModel:
         return out
 
     def engine_stats(self, n: int = 4000, seed: int = 12345) -> dict:
-        """Confound/regime statistics to print with any exp023-style run."""
+        """Confound/regime statistics to report with any placement comparison on this testbed."""
         rng = np.random.default_rng(seed)
         saved, self.rng = self.rng, rng
         try:

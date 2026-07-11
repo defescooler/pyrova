@@ -1,22 +1,4 @@
-"""MCNC floorplanning benchmark loader (YAL): real block geometry + the real
-signal netlist, with the die box (utilization) as a free parameter.
-
-Why this testbed: the constrained-payoff question needs (i) a REAL netlist and
-(ii) whitespace to allocate — the bundled designs have one or the other, never
-both. MCNC ami33 (33 blocks, 1988 benchmark suite) has published geometry and
-connectivity, and classic floorplanning leaves the die outline to the tool, so
-utilization is legitimately a swept parameter rather than an assumption.
-
-Nets are recovered from the NETWORK section: a signal shared by >= 2 blocks is
-one net over those blocks. Power/rail signals (GND/POW/VDD/VSS and the P?G/P?F
-rails, which touch nearly every block) are excluded, as HPWL conventionally
-covers signal nets only; pad-only signals drop out via the >=2-block rule.
-
-Block dimensions are abstract benchmark units; `load_yal` rescales all blocks
-so total block area matches `total_block_area_m2`, then sizes a square die for
-the requested utilization. Initial placement is a row tiling (the placer moves
-blocks; only sizes, die and nets matter).
-"""
+"""MCNC floorplanning benchmark loader (YAL): block geometry, signal netlist, and a free die box."""
 
 from __future__ import annotations
 import re
@@ -49,7 +31,7 @@ def parse_yal(path: str | Path) -> tuple[dict[str, tuple[float, float]],
     nets: list[list[str]] = []
     net_m = re.search(r"NETWORK\s*;(.*?)ENDNETWORK", text, re.S)
     if net_m:
-        # signal -> set of blocks touching it; entries are one statement per ';'
+        # signal -> blocks touching it; one statement per ';'
         sig_blocks: dict[str, set[str]] = {}
         for stmt in net_m.group(1).split(";"):
             toks = stmt.split()
@@ -64,8 +46,7 @@ def parse_yal(path: str | Path) -> tuple[dict[str, tuple[float, float]],
                 sig_blocks.setdefault(sig, set()).add(blk)
         n_blk = len(blocks)
         for sig, bs in sig_blocks.items():
-            # >=2 blocks = a routable net; >50% of blocks = a global (clock/rail
-            # variant), excluded like the named rails
+            # >=2 blocks = routable net; >50% of blocks = a global (clock/rail), excluded like named rails
             if 2 <= len(bs) <= n_blk // 2:
                 nets.append(sorted(bs))
     return blocks, nets
@@ -73,12 +54,7 @@ def parse_yal(path: str | Path) -> tuple[dict[str, tuple[float, float]],
 
 def load_yal(path: str | Path, utilization: float = 0.55,
              total_block_area_m2: float = 60e-6):
-    """(units, nets_idx, chip_w, chip_h) ready for the solver/placer.
-
-    utilization        : total block area / die area (the whitespace knob)
-    total_block_area_m2: silicon scale for the abstract benchmark units;
-                         default ~60 mm^2 of blocks (laptop-SoC-class die)
-    """
+    """(units, nets_idx, chip_w, chip_h) ready for the solver/placer."""
     blocks, nets_names = parse_yal(path)
     names = sorted(blocks)
     raw_area = sum(w * h for w, h in blocks.values())

@@ -27,6 +27,7 @@ Set PYROVA_SMOKE=1 for a tiny local execution check.
 from __future__ import annotations
 import os
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -93,6 +94,7 @@ def main():
             for pw in test])
         return cvar(pk, ALPHA)
 
+    t0 = time.perf_counter()
     Dk = []
     for k in range(PAIR_OFFSET, PAIR_OFFSET + N_PAIRS):
         tr = scen_set(units, tot, np.random.default_rng(10_000 + k), N_ORACLE)
@@ -102,9 +104,12 @@ def main():
         Dk.append(c_m - c_c)
         emit(f"  pair {k}: D*_k = {Dk[-1]:+.4f}")
 
+    dt = time.perf_counter() - t0
     m, _, lo, hi = ci95_t(Dk)
     emit(f"D*(transfer, N={N_ORACLE}) = {m:+.4f} K CI[{lo:+.4f},{hi:+.4f}] "
          f"p={paired_t_p(Dk):.4f}")
+    emit(f"runtime: {dt:.1f}s total, {dt/max(N_PAIRS,1):.1f}s/pair "
+         f"(2 fits + 2 evals@{EVAL_GRID}^2 per pair)")
     emit("(CI>0 -> the reversal survives trap controls; <=0 -> matched-grid ghost. "
          "Pool pairs across offsets for the combined CI.)")
     fh.close()

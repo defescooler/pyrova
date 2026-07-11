@@ -6,8 +6,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ..core.design import Design
 
-# DEF distance units. Industry standard floorplan DEF uses 1000 database units
-# per micron (1 DBU = 1 nm).  metres -> DBU  ==  m * 1e6 (um/m) * 1000 (DBU/um).
+# metres -> DBU scale: 1e6 um/m * 1000 DBU/um (1 DBU = 1 nm, standard floorplan-DEF resolution).
 DBU_PER_MICRON = 1000
 _M_TO_DBU = 1e6 * DBU_PER_MICRON
 

@@ -8,12 +8,7 @@ if TYPE_CHECKING:
 
 
 def export_flp(design: "Design", path: str) -> None:
-    """
-    Write `design`'s macros to a .flp file at `path`.
-
-    Format (whitespace-separated):  name  width  height  left_x  bottom_y
-    (all dimensions in metres).
-    """
+    """Write `design`'s macros to `path` as whitespace-separated `name width height left_x bottom_y` (metres)."""
     with open(path, "w") as f:
         f.write("# generated floorplan\n")
         f.write("# name\twidth\theight\tleft_x\tbottom_y   (metres)\n")

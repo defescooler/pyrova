@@ -66,16 +66,12 @@ class PowerScenario:
 
 @dataclass
 class ThermalConfig:
-    """Thermal-stack parameters mirroring the ``.config`` fields the solver reads.
-
-    Defaults match the bundled ``inputs/configs/thermal.config`` (and the
-    reference solver's built-in defaults) exactly — the experiments and the test
-    suite must run on the same stack. If you change one, change the other and
-    regenerate the golden snapshot.
-    """
+    """Thermal-stack parameters mirroring ``.config``; defaults equal the bundled ``inputs/configs/thermal.config`` (pinned by tests — change both together)."""
     ambient: float = 318.15       # K
-    r_convec: float = 0.1         # K/W
+    r_convec: float = 0.1         # K/W (heat-sink-to-air)
 
+    # t_ = layer thickness [m]; k_ = thermal conductivity [W/(m*K)];
+    # s_ = square side length [m].
     t_chip: float      = 0.00015
     k_chip: float      = 130.0
     t_interface: float = 2.0e-05
@@ -116,12 +112,7 @@ class Design:
     @classmethod
     def from_flp(cls, path: str, name: str | None = None,
                  thermal_config: ThermalConfig | None = None) -> "Design":
-        """Build a Design from a ``.flp`` file; chip size is its bounding box.
-
-        Macros are re-origined to (0, 0): the solver grid spans [0, chip_w] x
-        [0, chip_h], and a floorplan whose bounding box starts above the origin
-        would otherwise place macros off-grid (their power silently dropped).
-        """
+        """Build a Design from a ``.flp`` file (chip size = bounding box; macros re-origined to (0,0) so none fall off the solver grid)."""
         units = parse_flp(path)
         if not units:
             raise ValueError(f"No macros parsed from {path}")

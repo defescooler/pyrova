@@ -22,16 +22,7 @@ def _as_power_dict(design: "Design", power_map) -> dict[str, float]:
 
 
 def peak_temperature(design: "Design", solver: "GridFDSolver", power_map) -> float:
-    """
-    Peak silicon dT for `design` under one workload `power_map`.
-
-    design    : Design (macro positions define the power -> grid mapping)
-    solver     : built + factorized GridFDSolver (G depends only on chip
-                 geometry, so one solver is reused across placements)
-    power_map  : dict[name->W] | PowerScenario | array in macro order
-
-    Returns dT_peak = max(T_silicon) - T_ambient   [K].
-    """
+    """Peak silicon temperature rise for one workload; returns peak_dT = max(T_silicon) - ambient [K]."""
     powers = _as_power_dict(design, power_map)
     solver.units = design.macro_flp_dicts()
     Q = solver.build_rhs(powers)
@@ -42,27 +33,13 @@ def peak_temperature(design: "Design", solver: "GridFDSolver", power_map) -> flo
 
 def cvar_temperature(design: "Design", solver: "GridFDSolver",
                      power_maps, alpha: float = 0.90) -> float:
-    """
-    CVaR_alpha of peak dT across a set of workloads.
-
-    power_maps : iterable of power_map (each as accepted by peak_temperature)
-    alpha       : CVaR tail level (default 0.90)
-
-    Returns CVaR_alpha(dT_peak) [K].
-    """
+    """CVaR_alpha of peak dT across a set of workloads [K]."""
     peaks = [peak_temperature(design, solver, pm) for pm in power_maps]
     return cvar(peaks, alpha)
 
 
 def mean_cvar_temperature(design: "Design", solver: "GridFDSolver",
                           power_maps, alpha: float = 0.90) -> tuple[float, float]:
-    """
-    (mean, CVaR_alpha) of peak dT across a set of workloads, in one solve pass.
-
-    Reporting both sides of a placement de-confounds a CVaR-only score: see
-    `pyrova.evaluation.metrics.mean_cvar`.
-
-    Returns (mean dT_peak, CVaR_alpha(dT_peak)) [K].
-    """
+    """(mean, CVaR_alpha) of peak dT across a set of workloads in one solve pass [K]."""
     peaks = [peak_temperature(design, solver, pm) for pm in power_maps]
     return mean_cvar(peaks, alpha)

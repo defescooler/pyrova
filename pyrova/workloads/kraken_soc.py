@@ -1,31 +1,4 @@
-"""Kraken nano-UAV SoC: a measurement-anchored heterogeneous testbed.
-
-Kraken (PULP platform, GF 22 nm FDX, 9 mm^2) is a multi-sensor fusion SoC whose
-subsystems are duty-cycled BY THE APPLICATION: an event-driven spiking engine
-(SNE) watches a DVS camera while the frame engine (CUTIE) and the 8-core PULP
-cluster sleep, and vice versa. That is the anti-correlated heavy-cluster
-structure this project's mechanism needs — exhibited by real silicon, with
-per-subsystem powers MEASURED on chip.
-
-PROVENANCE (every number below is tagged):
-  [K-HC]  arXiv:2209.01065  Di Mauro et al., HotChips 2022 (die, subsystems)
-  [K-SH]  arXiv:2410.09054  Kraken Shield / embodied-AI paper (silicon power)
-  [TCN-C] arXiv:2212.00688  TCN-CUTIE (CUTIE area 2.96 mm^2, low-V point)
-  [C-ES]  arXiv:2302.07957  ColibriES (FC ~3.5 mW acquisition, idle levels)
-  MEASURED = published silicon measurement.  ASSUMED = our modelling choice,
-  stated inline; no ASSUMED number is load-bearing for a claim without the
-  exp025 validity gate passing.
-
-SCOPE CONTRACT: this is a MEASUREMENT-ANCHORED MODEL, not a trace dataset.
-Subsystem mode powers and the mode structure are measured [K-SH/K-HC/C-ES];
-sub-block power splits, non-CUTIE areas, and mode duty cycles are ASSUMED and
-documented. Absolute power (0.002-0.373 W on 9 mm^2) is far below our
-heatsink-class thermal config, so experiments rescale to a target peak dT via
-`calibrate_scale` (the BOOM protocol, exp021); ONLY the cross-mode/cross-block
-structure is claimed, never absolute Kelvin. Results are statements about
-"a model anchored to Kraken's measured mode powers", one rung below real
-traces, one above the stylised hetero-SoC.
-"""
+"""Kraken nano-UAV SoC: a measurement-anchored heterogeneous testbed (silicon per-subsystem powers; areas, splits, and duty cycles assumed)."""
 
 from __future__ import annotations
 import numpy as np
@@ -98,18 +71,14 @@ _MODES = {
     "fusion":   _mode_power(sne=98.0, cutie=110.0, cl=140.0, fc=25.0, l2=8.0),
     "idle":     _mode_power(),
 }
-# Duty cycles are NOT published [extraction: "no duty cycles"] — mission-profile
-# mix ASSUMED (always-on event watching dominant on a nano-UAV; exp025 prints it).
+# Duty cycles are NOT published — mission-profile mix ASSUMED (always-on event
+# watching dominant on a nano-UAV).
 _MODE_PROBS = {"event": 0.30, "frame": 0.10, "dronet_p": 0.10, "dronet_e": 0.15,
                "fusion": 0.15, "idle": 0.20}
 
 
 def kraken_units() -> list[dict]:
-    """Block list as solver unit dicts (metres), tiled left-to-right rows.
-
-    Initial tiling is arbitrary (the placer moves blocks); only block sizes and
-    the 3x3 mm die box matter.
-    """
+    """Block list as solver unit dicts (metres), tiled left-to-right; only sizes and the 3x3 mm die box matter (the placer moves blocks)."""
     units, x, y, row_h = [], 0.0, 0.0, 0.0
     chip_w = _DIE_W_MM * 1e-3
     for name, w_mm, h_mm in _BLOCKS:
@@ -124,13 +93,7 @@ def kraken_units() -> list[dict]:
 
 
 class KrakenWorkloadModel:
-    """Mode-mixture sampler over the measurement-anchored Kraken model (same
-    API as the other workload models: ``sample(n) -> list of power arrays``).
-
-    Power unit: WATTS after `scale` (raw table is mW; `calibrate_scale` sets
-    the multiplier so the mean per-mode peak dT hits a target — the exp021
-    BOOM protocol; relative structure is unchanged by construction).
-    """
+    """Mode-mixture sampler over the Kraken model; sample(n) -> power arrays in WATTS after `scale` (raw table is mW)."""
 
     def __init__(self, units: list[dict], seed: int = 0, noise: float = 0.15):
         block_names = [b[0] for b in _BLOCKS]
@@ -146,8 +109,7 @@ class KrakenWorkloadModel:
         self.scale = 1.0
 
     def calibrate_scale(self, scenario_peaks_fn, target: float) -> float:
-        """Set `scale` so the probability-weighted mean peak dT of the pure
-        mode vectors equals `target` [K] (linear solver => exact)."""
+        """Set `scale` so the probability-weighted mean peak dT of the pure mode vectors equals `target` [K]."""
         base = scenario_peaks_fn([m.copy() for m in self.modes])
         self.scale = float(target / np.dot(self.mode_p, base))
         return self.scale
@@ -162,7 +124,7 @@ class KrakenWorkloadModel:
         return out
 
     def regime_stats(self, n: int = 4000, seed: int = 12345) -> dict:
-        """Confound/regime statistics to print with any exp025 run."""
+        """Confound/regime statistics to report with any placement comparison on this model."""
         rng = np.random.default_rng(seed)
         saved, self.rng = self.rng, rng
         try:

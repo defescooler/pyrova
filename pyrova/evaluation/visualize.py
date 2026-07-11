@@ -14,10 +14,12 @@ from pyrova.core.io import parse_flp
 
 
 def read_flp(path: Path) -> list[dict]:
+    """Floorplan units as dicts (name, leftx, bottomy, width, height) [m]."""
     return parse_flp(str(path))
 
 
 def read_steady(path: Path) -> dict[str, float]:
+    """Map block name -> steady-state temperature [K] from a .steady file."""
     temps = {}
     with path.open() as f:
         for line in f:
@@ -30,6 +32,7 @@ def read_steady(path: Path) -> dict[str, float]:
 
 
 def read_ttrace(path: Path, frame: int) -> dict[str, float]:
+    """Map block name -> temperature [K] at `frame` of a transient .ttrace (negative counts back from the last)."""
     with path.open() as f:
         header = f.readline().strip().split()
         rows = [line.strip().split() for line in f if line.strip()]
@@ -47,6 +50,7 @@ def read_ttrace(path: Path, frame: int) -> dict[str, float]:
 
 
 def plot(units: list[dict], temps: dict[str, float], out: Path, title: str) -> None:
+    """Render `units` [m] colored by `temps` [K] to a floorplan heatmap at `out`; blocks absent from `temps` are gray."""
     block_temps = [temps[u["name"]] for u in units if u["name"] in temps]
     if not block_temps:
         raise ValueError("No floorplan unit names matched the temperature file")
@@ -73,6 +77,7 @@ def plot(units: list[dict], temps: dict[str, float], out: Path, title: str) -> N
         )
         ax.add_patch(rect)
 
+        # Label only blocks large enough to hold the text without overflowing.
         area = u["width"] * u["height"]
         if area > 5e-7:
             ax.text(
@@ -106,6 +111,7 @@ def plot(units: list[dict], temps: dict[str, float], out: Path, title: str) -> N
 
 
 def main() -> None:
+    """CLI: color a .flp floorplan by a steady or transient temperature file."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--flp", required=True, type=Path)
     parser.add_argument("--steady", type=Path)

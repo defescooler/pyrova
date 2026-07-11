@@ -1,12 +1,4 @@
-"""Steady-state finite-difference thermal solver for a 4-layer grid model
-(Si / TIM / Spreader / Heatsink) with adjoint gradients.
-
-The solver assembles the same linear conductance system the reference iterative
-grid solver converges to and solves it exactly by LU. ``G`` is symmetric, so the
-adjoint reuses the forward factorisation. The field, peak, and adjoint gradient
-of this module are pinned by ``pyrova.tests.golden``; run ``make verify``
-before and after any change to the numerics.
-"""
+"""Steady-state finite-difference thermal solver (4-layer Si/TIM/spreader/heatsink stack) with adjoint gradients."""
 
 from __future__ import annotations
 
@@ -27,7 +19,7 @@ __all__ = [
 
 
 def getr(k: float, length: float, area: float) -> float:
-    """Thermal resistance R = length / (k * area)."""
+    """Series thermal resistance R = length / (k * area) [K/W]."""
     return length / (k * area)
 
 
@@ -47,16 +39,13 @@ _SINK = {"W": SINK_W, "E": SINK_E, "N": SINK_N, "S": SINK_S}
 
 
 class GridFDSolver:
-    """4-layer grid model with a 5-point conductance stencil and 12 package nodes.
-
-    Layers (low -> high): 0 = Silicon (power-dissipating), 1 = TIM, 2 = Spreader,
-    3 = Heatsink (convective BC to ambient).
-    """
+    """4-layer grid model (Si/TIM/spreader/heatsink) with a 5-point conductance stencil and 12 package nodes."""
 
     SI, TIM, SP, HS = 0, 1, 2, 3
 
     def __init__(self, cfg: dict, units: list[dict], chip_w: float,
                  chip_h: float, nr: int, nc: int):
+        """Build from thermal cfg, block units and die dimensions [m], and grid size nr x nc."""
         self.cfg = cfg
         self.units = units
         self.chip_w = chip_w
@@ -137,7 +126,6 @@ class GridFDSolver:
         return [(i, nc - 1) for i in range(nr)]  # E
 
     def _on_edge(self, i: int, j: int, direction: str) -> bool:
-        """Whether grid cell (i, j) lies on the given chip edge."""
         if direction == "N":
             return i == 0
         if direction == "S":
@@ -155,7 +143,7 @@ class GridFDSolver:
     # Assembly
 
     def build(self) -> sparse.csr_matrix:
-        """Assemble and cache the conductance matrix G (scipy csr_matrix)."""
+        """Assemble and cache G, the (N, N) symmetric conductance matrix; returns the csr_matrix."""
         nr, nc, nl = self.nr, self.nc, self.nl
         rx, ry, rz = self.rx, self.ry, self.rz
         pk = self.pk
@@ -240,8 +228,7 @@ class GridFDSolver:
     # Block <-> grid geometry
 
     def _touched_cells(self, u: dict):
-        """Yield (i, j, cell_lx, cell_rx, cell_bot, cell_top) for every Si cell a
-        block's bounding box reaches. Row i=0 is the top (high y) of the chip."""
+        """Yield (i, j, cell x/y bounds) for every Si cell a block's bbox reaches; row i=0 is chip top (high y)."""
         nr, nc, cw, ch = self.nr, self.nc, self.cw, self.ch
         chip_h = self.chip_h
         by, ty_b = u["bottomy"], u["bottomy"] + u["height"]
@@ -257,11 +244,7 @@ class GridFDSolver:
                 yield i, j, j * cw, (j + 1) * cw, cell_bot, cell_top
 
     def build_rhs(self, block_powers: dict[str, float]) -> np.ndarray:
-        """Assemble the RHS Q (shape (N,)) from per-block powers {name: W}.
-
-        Block power is spread onto Si cells by area-weighted overlap; heatsink
-        cells and package nodes carry the ambient boundary term.
-        """
+        """Assemble RHS Q (N,) from per-block powers {name: W}; power spreads onto Si cells by area overlap, ambient on heatsink/package nodes."""
         Q = np.zeros(self.N)
         ambient = self.cfg["ambient"]
 
@@ -310,10 +293,11 @@ class GridFDSolver:
         return spsolve(self.G, Q)
 
     def solve_from_powers(self, block_powers: dict[str, float]) -> np.ndarray:
+        """Full temperature vector (shape (N,)) from per-block powers {name: W}."""
         return self.solve(self.build_rhs(block_powers))
 
     def silicon_layer(self, T: np.ndarray) -> np.ndarray:
-        """Si-layer temperatures as an (nr, nc) array."""
+        """Si-layer absolute temperatures (not ambient-relative) as an (nr, nc) array."""
         nr, nc = self.nr, self.nc
         return T[self.SI * nr * nc:(self.SI + 1) * nr * nc].reshape(nr, nc)
 
@@ -323,23 +307,14 @@ class GridFDSolver:
 
     # Adjoint gradients
 
-    def adjoint_dT_dQ(self, dL_dT: np.ndarray) -> np.ndarray:
-        """Adjoint solve: returns lam with G^T lam = dL/dT. G is symmetric, so the
-        forward LU factor is reused; only the un-factorised path solves G^T
-        explicitly."""
+    def adjoint_solve(self, dL_dT: np.ndarray) -> np.ndarray:
+        """Adjoint solve G^T lam = dL/dT; reuses the symmetric forward LU factor when available."""
         if self._factor is not None:
             return self._factor(dL_dT)
         return spsolve(self.G.T.tocsc(), dL_dT)
 
     def peak_T_gradient(self, block_powers: dict[str, float]) -> tuple[float, dict[str, float]]:
-        """Peak Si temperature rise dT = T_peak - T_ambient [K] and its gradient
-        w.r.t. each block's power [K/W]. Returns dT, never absolute T (project
-        invariant: all thermal metrics are ambient-relative).
-
-        WARNING: the gradient holds the argmax cell fixed. It is a subgradient at
-        placements where the hot cell changes; callers probing near such kinks
-        must detect them separately.
-        """
+        """Peak Si temperature rise [K] and gradient {name: K/W}; ΔT is ambient-relative and the gradient is a subgradient at hot-cell kinks."""
         Q = self.build_rhs(block_powers)
         T = self.solve(Q)
         nc = self.nc
@@ -350,7 +325,7 @@ class GridFDSolver:
         # adjoint: G^T lam = e_{i*}
         dL_dT = np.zeros(self.N)
         dL_dT[self._nidx(self.SI, peak_i, peak_j)] = 1.0
-        lam = self.adjoint_dT_dQ(dL_dT)
+        lam = self.adjoint_solve(dL_dT)
 
         # grad = A(p)^T lam; dQ/dP_b = overlap_area / block_area on the Si cells
         # block b touches (column b of A(p)).
@@ -370,10 +345,7 @@ class GridFDSolver:
         return peak_dt, grad
 
     def power_injection_matrix(self) -> np.ndarray:
-        """A(p): dQ/dP as a dense (N, n_units) matrix — column b holds block b's
-        area-overlap fractions on the Si cells (no ambient terms). T = G^{-1}
-        (A P + b_amb), so row_i(G^{-1}A) = a_i = A(p)^T lam_i for the node-i
-        adjoint lam_i (G^T lam_i = e_i)."""
+        """Power-injection matrix A(p) = dQ/dP, dense (N, n_units); column b holds block b's Si-cell area-overlap fractions."""
         A = np.zeros((self.N, len(self.units)))
         for b, u in enumerate(self.units):
             lx, by = u["leftx"], u["bottomy"]
@@ -389,11 +361,7 @@ class GridFDSolver:
     def rhs_position_grad(self, lam: np.ndarray,
                           block_powers: dict[str, float]
                           ) -> tuple[dict[str, float], dict[str, float]]:
-        """Exact position gradient of lam^T Q per block, as (dcx, dcy) dicts.
-
-        Block-to-cell overlap is piecewise-linear in position, so the analytic
-        derivative is exact (a one-sided subgradient on cell boundaries).
-        """
+        """Exact position gradient of lam^T Q per block as (dcx, dcy) dicts; overlap is piecewise-linear in position (one-sided on cell boundaries)."""
         dcx: dict[str, float] = {}
         dcy: dict[str, float] = {}
         for u in self.units:
@@ -475,11 +443,7 @@ def read_reference_block_steady(path: str) -> dict[str, float]:
 def random_power_map(units: list[dict], total_power: float,
                      rng: np.random.Generator,
                      hot_fraction: float = 0.4) -> dict[str, float]:
-    """A randomised but plausible block power map summing to `total_power` [W].
-
-    A `hot_fraction` of units draw active power (0.5-3.0 W raw); the rest idle at
-    a 5% baseline. Raw values are area-weighted, then normalised to the target.
-    """
+    """Randomised block power map summing to `total_power` [W]; a `hot_fraction` of units draw active power, the rest idle at a 5% baseline."""
     n = len(units)
     n_hot = max(1, int(n * hot_fraction))
     hot_idx = rng.choice(n, size=n_hot, replace=False)
@@ -488,9 +452,8 @@ def random_power_map(units: list[dict], total_power: float,
     total_area = areas.sum()
 
     raw = np.full(n, 0.05)
-    # Draw in ascending index order (explicit sort, not set-iteration order,
-    # which is a CPython hash-table detail): the uniform draws are
-    # order-dependent and this makes the stream floorplan-size-independent.
+    # Draw in sorted index order, not set-iteration order: the uniform draws are
+    # order-dependent, so sorting makes the RNG stream floorplan-size-independent.
     for idx in np.sort(hot_idx):
         raw[idx] = rng.uniform(0.5, 3.0)
 

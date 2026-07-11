@@ -1,14 +1,4 @@
-"""Half-perimeter wirelength over net bounding boxes, plus a differentiable
-log-sum-exp surrogate used by the constrained placer (Phase 3).
-
-`hpwl` is the exact (non-differentiable) HPWL for reporting and budget checks.
-`smooth_hpwl_grad` is the log-sum-exp surrogate the gradient placer optimises,
-smooth everywhere so it has no subgradient kinks.
-
-WARNING: the surrogate's `gamma` trades accuracy for stiffness — it converges
-to true HPWL from above as gamma shrinks, but a smaller gamma stiffens the
-gradient.
-"""
+"""Half-perimeter wirelength (HPWL) and a differentiable log-sum-exp surrogate."""
 
 from __future__ import annotations
 from typing import TYPE_CHECKING
@@ -20,8 +10,7 @@ if TYPE_CHECKING:
 
 
 def hpwl(design: "Design") -> float:
-    """Total half-perimeter wirelength over `design.nets` (per-net bounding box of
-    the connected macro centres), in metres. Returns 0.0 when the design has no nets."""
+    """Total half-perimeter wirelength over `design.nets` [m]; 0.0 when the design has no nets."""
     nets = getattr(design, "nets", None)
     if not nets:
         return 0.0
@@ -53,15 +42,7 @@ def _lse_span(v: np.ndarray, inv_gamma: float, gamma: float):
 
 
 def smooth_hpwl_grad(cx, cy, nets, gamma: float):
-    """Log-sum-exp HPWL surrogate and its exact gradient w.r.t. macro centres.
-
-    cx, cy : (n_macros,) centre coordinates [m], macro-index order.
-    nets   : list of nets, each a sequence of macro INDICES into cx/cy.
-    gamma  : smoothing length [m]; smaller -> closer to exact HPWL, stiffer grad.
-
-    Returns (value, grad_cx, grad_cy). The surrogate is smooth everywhere, so
-    the gradient is exact (no subgradient kinks) and the FD check is tight.
-    """
+    """Log-sum-exp HPWL surrogate and its exact gradient w.r.t. macro centres; nets index into cx/cy, returns (value, grad_cx, grad_cy)."""
     cx = np.asarray(cx, dtype=float)
     cy = np.asarray(cy, dtype=float)
     n = len(cx)
@@ -82,11 +63,7 @@ def smooth_hpwl_grad(cx, cy, nets, gamma: float):
 
 
 def smooth_hpwl(design: "Design", gamma: float | None = None) -> float:
-    """Differentiable log-sum-exp HPWL value for a Design (metres).
-
-    Returns 0.0 when the design has no nets. `gamma` defaults to 1% of the mean
-    chip span. Names not present among the macros are dropped from their net.
-    """
+    """Differentiable log-sum-exp HPWL value for a Design [m]; 0.0 with no nets, gamma defaults to 1% of mean chip span."""
     nets = getattr(design, "nets", None)
     if not nets:
         return 0.0

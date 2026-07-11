@@ -1,8 +1,4 @@
-"""Parsers for the Pyrova input formats (.flp, .config, .ptrace) and floorplan
-geometry helpers. Single home for the ``unit dict`` — ``{name, width, height,
-leftx, bottomy}`` in metres — the block representation shared by the solver,
-placer, workloads, and plots.
-"""
+"""Parsers for the Pyrova input formats (.flp, .config, .ptrace) and floorplan geometry helpers."""
 
 from __future__ import annotations
 
@@ -32,14 +28,7 @@ def parse_flp(path: str) -> list[dict]:
 
 
 def parse_desc_connectivity(path: str) -> list[tuple[str, str, float]]:
-    """Parse the connectivity section of a HotFloorplan ``.desc`` file.
-
-    The ``.desc`` format has two sections: block area/aspect lines (5 fields:
-    ``name area min_aspect max_aspect rotable``) and connectivity lines (3
-    fields: ``unit1 unit2 wire_density``). Returns the connectivity edges as
-    ``(unit1, unit2, wire_density)``; block lines are ignored (geometry comes
-    from the ``.flp``). This is the canonical netlist source (e.g. the bundled
-    ``ev6.desc`` is HotSpot's HotFloorplan Alpha-EV6 connectivity)."""
+    """Parse a ``.desc`` connectivity section into ``(unit1, unit2, wire_density)`` edges (block lines ignored)."""
     edges = []
     for line in _data_lines(path):
         parts = line.split()
@@ -49,10 +38,7 @@ def parse_desc_connectivity(path: str) -> list[tuple[str, str, float]]:
 
 
 def parse_config(path: str) -> dict:
-    """Parse a ``.config`` file of ``-key value`` lines into ``{key: value}``.
-
-    Values that look numeric are floats; everything else stays a string.
-    """
+    """Parse a ``.config`` of ``-key value`` lines into ``{key: value}`` (numeric values become floats)."""
     cfg: dict[str, float | str] = {}
     for line in _data_lines(path):
         line = line.split("#")[0].strip()
@@ -67,12 +53,7 @@ def parse_config(path: str) -> dict:
 
 
 def parse_ptrace(path: str) -> tuple[list[str], list[list[float]]]:
-    """Parse a whitespace-separated ``.ptrace`` into (block_names, power-rows).
-
-    The first row is treated as a header of block names when it is non-numeric;
-    a headerless file gets synthetic ``col<i>`` names. This is the single
-    ptrace parser (``workloads.real_traces`` builds on it).
-    """
+    """Parse a whitespace-separated ``.ptrace`` into (block_names, power-rows); a numeric first row gets synthetic ``col<i>`` names."""
     lines = list(_data_lines(path))
     first = lines[0].split()
     try:

@@ -1,15 +1,4 @@
-"""Real BOOM (RISC-V) per-functional-unit power across benchmarks — a genuine
-across-program workload at functional-block granularity. The dataset is GPL-3.0
-(github.com/zhaijw18/mcpat-calib-public) and deliberately NOT bundled: clone it and
-point `BOOM_DATA` (or explicit paths) at it. Per-benchmark per-component dynamic
-power comes from `boom-data/train_data/feature-demo.csv` (3 configs x 80 benchmarks);
-per-component areas from `boom-data/smallboom/dhrystone/mcpat.rpt`.
-
-Load-bearing caveats: the McPAT report gives component areas but no placement, so
-the floorplan layout is synthesised (gridded); the areas are from the `smallboom`
-config while the power CSV may be a different config; FP is thermally light here
-(~1.5% of core power).
-"""
+"""Real BOOM (RISC-V) per-functional-unit power across 80 benchmarks."""
 
 from __future__ import annotations
 import csv
@@ -18,8 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-# McPAT leaf component -> functional family. BP is intentionally absent: it is the PARENT of
-# GP / L1_LP / L2_LP / Chooser / RAS, so including it would double-count branch power/area.
+# BP omitted: it is the PARENT of GP/L1_LP/L2_LP/Chooser/RAS — including it would double-count.
 LEAF_FAM = {
     "FP_RRAT": "FP", "FP_List": "FP", "FP_RF": "FP", "FP_Win": "FP", "FPU": "FP",
     "Int_RRAT": "INT", "Int_RF": "INT", "Int_ALU": "INT", "Com_ALU": "INT", "Inst_Win": "INT",
@@ -29,7 +17,7 @@ LEAF_FAM = {
     "Inst_Dec": "CTRL", "Free_List": "CTRL", "ROB": "CTRL", "Rslt_BB": "CTRL",
 }
 
-# McPAT report name prefix -> leaf (report names carry suffixes like "(FPUs) (Count: 1 )").
+# Report names carry suffixes like "(FPUs) (Count: 1 )", so match leaves by prefix.
 _PFX = {
     "Instruction Cache": "IC", "Branch Target Buffer": "BTB", "Global Predictor": "GP",
     "L1_Local Predictor": "L1_LP", "L2_Local Predictor": "L2_LP", "Chooser": "Chooser",
@@ -63,11 +51,7 @@ def _parse_areas(rpt_path: str) -> dict[str, float]:
 
 
 def resolve_paths(boom_dir: str | None = None) -> tuple[str, str] | tuple[None, None]:
-    """Find feature-demo.csv + mcpat.rpt under a cloned mcpat-calib repo, or return (None, None).
-
-    Fallback locations are resolved against the repo root (not the cwd), so
-    experiments behave the same from any invocation directory.
-    """
+    """Find feature-demo.csv + mcpat.rpt under a cloned mcpat-calib repo, or (None, None)."""
     import os
     root = Path(__file__).resolve().parents[2]
     roots = [boom_dir, os.environ.get("BOOM_DATA"),
@@ -121,8 +105,7 @@ class BoomWorkload:
         return float((self.power.sum(1) / self.core).mean())
 
     def scale_to_peak(self, scenario_peaks_fn, target: float) -> None:
-        """Rescale all power so the mean per-program peak dT equals `target` [K] (linear solver).
-        Scales `core` by the same factor so `coverage` stays valid afterwards."""
+        """Rescale all power (and `core`, to keep `coverage` valid) so mean per-program peak dT equals `target` [K]."""
         base = scenario_peaks_fn(self.scenarios()).mean()
         k = target / base
         self.power = self.power * k

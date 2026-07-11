@@ -1,27 +1,4 @@
-"""Edinburgh/Tomusk gem5+McPAT per-component power across real programs — the
-candidate second real multi-program workload source after boom_traces (Tomusk
-2016, https://datashare.ed.ac.uk/handle/10283/2187, CC BY 4.0; NOT bundled —
-download the .tar.xz items and extract the config directories you need).
-Each report is McPAT 0.8 at print level 5 (per-component Area and Runtime
-Dynamic, ARM O3 core); the component taxonomy maps one-to-one onto the
-boom_traces leaf families, so exp009-style experiments drop in unchanged.
-Three suites on a SHARED 3000-configuration grid:
-
-    exp2_spi1_<bench>_0/<config>/mcpat_report   SPEC 2006 INT   (12 programs)
-    exp2_fp1_<bench>_0/<config>/mcpat_report    EEMBC FPMark    (12 programs)
-    exp2_de1_<bench>_0/<config>/mcpat_report    EEMBC DEN/Net   (22 programs)
-
-GATE VERDICT (2026-07-06, config 001523): FAILED for Pyrova's purpose.
-(a) FP-cluster power is 0.0747 W (~34% of core) on EVERY program — identical on
-the 12 pure-integer SPEC runs and the FP-heavy big03fp composite (floor ratio
-1.00): McPAT 0.8 does not clock-gate idle FPUs, so there is NO cross-program FP
-signal; run `fpu_floor_ratio` before trusting FP structure from any McPAT-0.8
-source. (b) The advertised 46 programs are ~14: FPMark and DENBench each ship
-ONE composite suite run (exp2_big03fp / exp2_big03). Loader kept (coverage
-0.998 vs Core); regenerating power with McPAT >=1.0 from the shipped
-`mcpat_report.xml` + `stats.txt` is possible but still yields ~14 programs —
-prefer the CoMeT pipeline (see CLAUDE.md roadmap) for a real second dataset.
-"""
+"""Edinburgh/Tomusk gem5+McPAT per-component power across real programs."""
 
 from __future__ import annotations
 import re
@@ -29,10 +6,7 @@ from pathlib import Path
 
 import numpy as np
 
-# Leaf component name-prefix -> functional family (longest prefix wins).
-# Parent components (IFU, EXU, Renaming Unit, LSU, MMU, Register Files,
-# Instruction Scheduler, Branch Predictor) are intentionally absent: counting
-# them would double leaf power.
+# Longest matching prefix wins. Parents (IFU/EXU/Renaming/LSU/MMU/Register Files/Scheduler/Branch Predictor) omitted: they would double-count leaf power.
 PFX_FAM = {
     "Instruction Cache": "MEM", "Branch Target Buffer": "CTRL",
     "Global Predictor": "CTRL", "L1_Local Predictor": "CTRL",
@@ -55,11 +29,7 @@ _CORE_RE = re.compile(r"^\s*Core:")
 
 
 def parse_mcpat_report(path: str | Path) -> tuple[dict[str, float], dict[str, float], float]:
-    """(leaf_runtime_W, leaf_area_m2, core_runtime_W) from a print-level-5 report.
-
-    A matched leaf header captures the next Area and Runtime Dynamic lines;
-    unmatched (parent) headers never capture, so parents cannot shadow leaves.
-    """
+    """(leaf_runtime_W, leaf_area_m2, core_runtime_W) from a print-level-5 report."""
     power: dict[str, float] = {}
     area: dict[str, float] = {}
     core_w = float("nan")
@@ -91,12 +61,7 @@ def parse_mcpat_report(path: str | Path) -> tuple[dict[str, float], dict[str, fl
 
 
 class TomuskWorkload:
-    """N real programs (SPEC INT / FPMark / DENBench) as power scenarios over
-    the McPAT leaf components, at ONE fixed hardware configuration.
-
-    API mirrors ``boom_traces.BoomWorkload`` (units/chip/scenarios/family_corr/
-    total_power_cv/scale_to_peak) so exp009-style experiments drop in.
-    """
+    """N real programs (SPEC INT / FPMark / DENBench) as power scenarios over the McPAT leaf components."""
 
     def __init__(self, extract_root: str | Path, config_id: str,
                  suites: tuple[str, ...] = ("spi", "fp", "de"), ncol: int = 6,
@@ -173,10 +138,7 @@ class TomuskWorkload:
         return float(share.mean()), float(share.max())
 
     def fpu_floor_ratio(self) -> float:
-        """FP-cluster power on SPEC-INT programs / on FPMark programs.
-
-        Near 1.0 means the McPAT-0.8 idle-FPU floor dominates (cross-program FP
-        variance is an artifact ceiling — dataset fails the gate for our use)."""
+        """FP-cluster power on SPEC-INT / on FPMark programs; ~1.0 means the idle-FPU floor dominates (artifact, not signal)."""
         f = np.array(self.families)
         fp = self.power[:, f == "FP"].sum(1)
         spec = [i for i, n in enumerate(self.names) if n.startswith("spi:")]
