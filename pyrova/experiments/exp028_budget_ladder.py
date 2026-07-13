@@ -1,30 +1,9 @@
-"""exp028: is the i.i.d. D*<0 a budget artifact? The pivot, properly powered.
-
-The project's overall verdict 1 -- "the i.i.d. negative was convergence speed,
-not structure" -- currently rests on two thin runs: exp013-A (3 oracle pairs, no
-CI on the '61% closed' fraction) and exp015-B (3 pairs, and it changed budget,
-N_ORACLE AND pair-count simultaneously, so the sign change 'resolved' nothing
-cleanly). This experiment isolates the ONE variable.
-
-It reproduces exp003's existence block EXACTLY -- same i.i.d. random_power_map,
-same grid 24^2, N_ORACLE=1500, N_TEST=4000, tot=2*n, alpha=0.9, same benches --
-and changes only: (i) a BUDGET LADDER n_iter in {40,120,240}; (ii) >=10 oracle
-pairs; (iii) the ladder is PAIRED (each pair's three budgets share one oracle
-draw + one holdout), so the improvement per pair has a paired CI.
-
-Population theory: min_p CVaR(p) <= CVaR(mean-opt) => true D* >= 0. So a measured
-D*<0 must be optimizer under-convergence or finite-oracle estimator variance.
-Estimator variance is budget-invariant; optimizer under-convergence shrinks with
-budget. Hence:
-
-PRE-REGISTERED READING (per bench):
-  - BUDGET ARTIFACT CONFIRMED if D*(40) CI<0 (reproduces exp003) AND the paired
-    improvement dD*(240)=D*(240)-D*(40) CI>0 AND D*(240) CI includes or exceeds 0
-    -- the negative closes with budget, as the convergence-speed story requires.
-  - STRUCTURAL / OPEN if D*(240) CI stays < 0 despite the ladder -- more budget
-    does not close it; the negative is not (only) convergence speed and needs a
-    deeper look (estimator variance, or a real pathology).
-  - NO EFFECT TO EXPLAIN if D*(40) CI already includes 0 on this bench.
+"""i.i.d. oracle-gap budget ladder: D* = trueCVaR(mean-oracle) -
+trueCVaR(cvar-oracle) at Adam budgets n_iter in {40, 120, 240}, PAIRED
+within each of 12 oracle pairs (each pair's budgets share one oracle draw
+and one holdout), on ev6 and floorplan2 with i.i.d. random_power_map
+scenarios: grid 24^2, alpha=0.9, N_ORACLE=1500, N_TEST=4000, tot=2*n.
+Reports per-budget D* and the paired budget improvement with 95% t-CIs.
 
 Set PYROVA_SMOKE=1 for a tiny local execution check (not a result).
 """
@@ -111,7 +90,7 @@ def run(path, cfg, emit):
         emit(f"  closure at {top} it: {closed:.0f}% of the 40-it deficit "
              f"(paired CI on dD* above is the inferential statement)")
 
-    # Pre-registered verdict.
+    # Verdict.
     b0, bT = BUDGETS[0], BUDGETS[-1]
     D0_lo, D0_hi = stats[b0][1], stats[b0][2]
     DT_lo, DT_hi = stats[bT][1], stats[bT][2]

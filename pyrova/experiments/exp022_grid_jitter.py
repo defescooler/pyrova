@@ -1,33 +1,12 @@
-"""exp022: mechanism of training-grid overfitting, and a training-time fix.
-
-exp018/exp020 established the phenomenon: placements optimised at 18x18 lose
-(or reverse) their measured advantage under 64x64 evaluation, the tail arm
-worse. Two parts:
-
-PART A — MECHANISM. Hypothesis: the optimiser dilutes block power across grid
-cells (the area-overlap rasterization lowers a cell's computed density when a
-block straddles more cells), so optimised placements should show LOWER
-per-block power concentration (Herfindahl index of a block's cell-overlap
-fractions) than area-matched random placements, more so for the cvar arm, and
-less so at finer training grids.
-    Metric: H(block) = sum_c f_c^2 over its overlap fractions f_c (1 = all
-    power in one cell); report the placement mean over blocks.
-
-PART B — FIX. Train with rasterization jitter (a fresh rigid sub-cell offset
-of the floorplan each Adam iteration; `raster_jitter=1.0`): in expectation the
-loss is averaged over grid phases, so cell-boundary structure cannot be
-exploited. Re-measure exp020's transfer cell (structured, N=128, alpha=0.95,
-train@18 -> eval@64) with jittered training.
-
-PRE-REGISTERED READINGS:
-  A: mechanism SUPPORTED if H(optimised) < H(random) with paired CI < 0 and
-     the cvar arm's H is <= the mean arm's; otherwise the dilution story is
-     wrong and only the phenomenon stands.
-  B: FIX WORKS if dCVaR(train@18+jitter -> eval@64) improves from exp020's
-     -1.61x to at least the train@24 level (CI containing or above -0.04
-     within its width), i.e. jitter recovers >= one grid level; FIX
-     INSUFFICIENT otherwise. If it works, the corrected measurement of the
-     structured trade at 18x18 becomes feasible and is reported here.
+"""Grid-overfitting concentration metric plus a jittered-training arm, on
+the structured family (N_TRAIN=128, alpha=0.95, 5 seeds). Part A: per-block
+power concentration H(block) = sum_c f_c^2 over a block's cell-overlap
+fractions (1 = all power in one cell; placement mean over blocks), optimised
+vs area-matched random placements, per arm, paired CI. Part B: training with
+rasterization jitter (a fresh rigid sub-cell offset of the floorplan each
+Adam iteration; `raster_jitter=1.0`, so the loss is averaged over grid
+phases in expectation) at 18x18, evaluated at 64x64 on a 500-scenario
+holdout; dCVaR with paired 95% t-CIs.
 """
 
 from __future__ import annotations
@@ -141,7 +120,7 @@ def main():
             pl.optimize(train, mode=mode, n_iter=N_ITER, lr=2e-2, verbose=False,
                         raster_jitter=jit, jitter_seed=800_000 + seed)
             placed[tag] = pl.get_units()
-        solver.units = units          # restore
+        solver.units = units          # herfindahl() repoints solver.units; undo before reuse
 
         H = {tag: herfindahl(solver, up) for tag, up in placed.items()}
         H_rows.append((H_rand, H["mean"], H["cvar"], H["mean-jit"], H["cvar-jit"]))

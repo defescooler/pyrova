@@ -128,16 +128,6 @@ class Design:
             thermal_config=thermal_config or ThermalConfig(),
         )
 
-    @classmethod
-    def from_def(cls, path: str, lef_path: str | None = None) -> "Design":
-        """Build a Design from DEF (+ LEF for macro sizes/pins). Not yet implemented."""
-        raise NotImplementedError("Design.from_def() pending DEF/LEF parser")
-
-    @classmethod
-    def from_netlist(cls, path: str) -> "Design":
-        """Build a Design from a gate-level/RTL netlist. Not yet implemented."""
-        raise NotImplementedError("Design.from_netlist() pending netlist front-end")
-
     # Accessors
 
     @property

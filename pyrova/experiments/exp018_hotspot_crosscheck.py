@@ -1,27 +1,12 @@
-"""exp018: do the paired placement deltas transfer to the reference thermal model?
-
-The suite's effect sizes (0.1-2.4 K) are comparable to the acknowledged
-model-error scale of an independent discretisation, and paired comparisons
-cancel only the SHARED part of model bias. This experiment evaluates final
-placements from both arms of the two headline comparisons in the reference
-solver (HotSpot grid model, external C binary) and checks whether the SIGN of
-the paired delta survives model transfer. It also records, for the first time
-with an in-repo reproduction path, the per-scenario peak agreement between our
-solver and the reference on identical placements and power maps.
-
-Arms:
-  A (claim 6): structured hand-built family, N_TRAIN=128, alpha=0.95, mean-opt
-     vs cvar-opt, 2 seeds (exp016-G seed scheme), reference evaluation on a
-     200-scenario subsample of the same holdout.
-  B (claim 11): BOOM split 40_000 (exp012/exp015 protocol), mean vs blend
-     gamma=0.75 at 120 iterations, reference evaluation on all 20 held-out
-     programs.
-
-PRE-REGISTERED READING (per arm): TRANSFERS if sign(dCVaR_reference) ==
-sign(dCVaR_ours) for every seed/split evaluated; the per-scenario peak
-correlation r is reported as the model-agreement statistic. Any sign flip is
-reported as a model-contingency warning on the corresponding claim in
-docs/CLAIMS.md.
+"""Reference-model transfer check: final placements from both arms of two
+paired comparisons are re-evaluated in the reference solver (HotSpot grid
+model, external C binary, 32x32 — an independent discretisation from the
+18x18 training grid), reporting the paired dCVaR sign per solver and the
+per-scenario peak correlation r. Arm A: structured hand-built family,
+N_TRAIN=128, alpha=0.95, mean-opt vs cvar-opt, 2 seeds, reference evaluation
+on a 200-scenario subsample of the holdout. Arm B: BOOM 60/20 split (seed
+base 40_000), mean vs blend gamma=0.75 at 120 iterations, reference
+evaluation on all 20 held-out programs.
 """
 
 from __future__ import annotations

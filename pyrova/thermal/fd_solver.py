@@ -344,20 +344,6 @@ class GridFDSolver:
             grad[u["name"]] = g
         return peak_dt, grad
 
-    def power_injection_matrix(self) -> np.ndarray:
-        """Power-injection matrix A(p) = dQ/dP, dense (N, n_units); column b holds block b's Si-cell area-overlap fractions."""
-        A = np.zeros((self.N, len(self.units)))
-        for b, u in enumerate(self.units):
-            lx, by = u["leftx"], u["bottomy"]
-            rx_b, ty_b = lx + u["width"], by + u["height"]
-            block_area = u["width"] * u["height"]
-            for i, j, clx, crx, cbot, ctop in self._touched_cells(u):
-                ow = max(0.0, min(rx_b, crx) - max(lx, clx))
-                oh = max(0.0, min(ty_b, ctop) - max(by, cbot))
-                if ow * oh > 0:
-                    A[self._nidx(self.SI, i, j), b] += (ow * oh) / block_area
-        return A
-
     def rhs_position_grad(self, lam: np.ndarray,
                           block_powers: dict[str, float]
                           ) -> tuple[dict[str, float], dict[str, float]]:

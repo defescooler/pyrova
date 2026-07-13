@@ -1,23 +1,9 @@
-"""Structured-workload learnability sweep: does the tail dimension become real & learnable?
-
-exp004 on the STRUCTURED workload (5-mode CPU mixture with anti-correlated FP/INT/MEM
-clusters; see workloads/structured.py). The anti-correlation creates a genuine,
-separable tail dimension that minimising the mean does not capture, so here CVaR-opt
-can beat mean-opt once the tail is learnable: the N_train curve REVERSES positive
-rather than merely closing to parity (the i.i.d. case, exp004).
-
-IMPORTANT — this experiment tests mean-opt vs PURE CVaR-opt (eps=0). A positive is
-evidence that *a tail dimension exists and pure CVaR can learn it under structure*,
-NOT that the Wasserstein-DRO penalty helps; the DRO penalty is tested separately in
-exp007. Do not re-label this as a DRO result.
-
-Caveat: the structured workload is hand-designed to contain exactly the
-anti-correlation the theory needs, so this proves "structure suffices," not that
-real workloads have it. exp006 is the real-trace probe.
-
-Metric: de-confounded dCVaR/dMean cells (= mean-opt minus CVaR-opt) on a large
-holdout, identical to exp004 (definitions and reading rule there); dCVaR>0 with
-dMean<0 is the mean-for-tail signature.
+"""N_train x alpha sweep, mean-opt vs pure CVaR-opt (eps=0) under the
+structured workload (5-mode CPU mixture with anti-correlated FP/INT/MEM
+clusters; workloads/structured.py): per cell, paired dCVaR and dMean
+(= mean-opt minus CVaR-opt) on a 1500-scenario holdout with 95% t-CIs over
+5 seeds, Holm correction across cells, dCVaR>0 with dMean<0 read as the
+mean-for-tail signature.
 """
 
 from __future__ import annotations

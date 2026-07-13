@@ -1,28 +1,10 @@
-"""exp019: does the blend win survive a STRONG mean baseline on FRESH splits?
-
-Two remaining internal-validity threats to claim 11 (docs/CLAIMS.md):
-  (i)  every blend comparison so far is against single-start Adam mean
-       training; if that baseline is itself under-converged on BOOM, the
-       "domination" pattern (blend beating mean on the MEAN) is a weak-baseline
-       artifact rather than an objective property;
-  (ii) exp015-A reused exp012's exact splits, so it is a budget-robustness
-       check on the same data slices, not an independent replication.
-
-Design: J=20 FRESH splits (seed base 90_000, disjoint from 40_000), 60/20,
-alpha=0.9, all arms lr=2e-2. Arms per split:
-    mean-std     Adam, 120 it, single start          (the historical baseline)
-    mean-strong  best of 5 jittered restarts x 240 it, selected on TRAINING
-                 mean (10x the historical optimisation effort; selection never
-                 sees the holdout)
-    blend-0.75   Adam, 120 it, single start          (exactly as claimed)
-PRE-REGISTERED READING (primary comparison is blend vs mean-STRONG):
-  - SURVIVES if dCVaR(mean-strong - blend) NB-CI > 0 on the fresh splits:
-    claim 11 upgrades to "replicated against a 10x-effort mean baseline".
-  - BASELINE ARTIFACT if mean-strong closes the gap (CI spans 0 AND
-    dMean(mean-strong - blend) drops to ~0): re-scope claim 11 to
-    "equal-effort single-start training" and demote the domination finding.
-  - Secondary: dCVaR(mean-std - blend) replicates exp015-A on fresh data.
-Also reports mean-strong vs mean-std (how much the baseline itself improves).
+"""BOOM strong-baseline comparison over 20 fresh 60/20 splits (seed base
+90_000), alpha=0.9, all arms lr=2e-2. Arms per split: mean-std (Adam, 120
+it, single start), mean-strong (best of 5 jittered restarts x 240 it,
+selected on TRAINING mean — selection never sees the holdout), blend
+gamma=0.75 (Adam, 120 it, single start). Reports OOS dCVaR/dMean with
+Nadeau-Bengio CIs for blend vs each mean baseline and mean-strong vs
+mean-std.
 """
 
 from __future__ import annotations
@@ -50,7 +32,7 @@ K_RESTART = 5
 JITTER = 0.5
 N_SPLITS = 20
 N_TRAIN = 60
-SEED_BASE = 90_000       # fresh split family (exp012/exp015 used 40_000)
+SEED_BASE = 90_000       # fresh split family
 TARGET_PEAK = 40.0
 
 
@@ -155,8 +137,7 @@ def main():
              "report both comparisons; the historical claim was partly baseline-limited.")
     else:
         v = ("BASELINE ARTIFACT: the strong mean baseline closes the gap — re-scope "
-             "claim 11 to equal-effort single-start training and demote the domination "
-             "finding.")
+             "claim 11 to equal-effort single-start training and demote the domination finding.")
     emit(f"\nPRE-REGISTERED VERDICT: {v}")
     fh.close()
     print(f"\nWrote {out.relative_to(ROOT)}")

@@ -1,16 +1,10 @@
-"""Real-trace probe on ev6 over a distribution of .ptrace programs (disjoint train/test).
-
-SANITY CHECK, not a valid test, with the only bundled ev6-compatible trace. Workload
-uncertainty for this hypothesis means variation ACROSS programs; the one bundled trace
-(gcc) is a single program in steady state, so across-timestep resampling is not the
-across-program uncertainty the hypothesis concerns. With one operating point there is
-nothing to be robust against, so a ~0 result is expected and uninformative. Drop a
-second architecturally-different trace (e.g. a memory-bound SPEC benchmark on the
-Alpha 21264) into PROGRAMS to turn this into a real test — no code change. Do NOT
-synthesise the second program (that re-introduces the circularity exp005 already has).
-
-Metric: de-confounded dCVaR/dMean cells (= mean-opt minus CVaR-opt), as exp004
-(definitions there); a real signal would show as dCVaR>0 with dMean<0.
+"""Real-trace probe on ev6: mean-opt vs CVaR-opt over an N_train x alpha grid,
+scenarios resampled from the .ptrace programs in PROGRAMS with disjoint
+train/test row pools per split; per cell, paired dCVaR/dMean (= mean-opt minus
+CVaR-opt) with 95% t-CIs over 5 seeds, plus measured cross-scenario FP/MEM and
+FP/INT cluster correlations. With a single program in PROGRAMS the script runs
+as a sanity check only; add a second architecturally-different trace to
+PROGRAMS for a real across-program test — no code change.
 """
 
 from __future__ import annotations
@@ -60,7 +54,7 @@ def oos_mean_cvar(pl, scen, alpha):
 
 def family_corr(units, corr):
     """nanmean: a constant-power block has undefined self-correlation entries and
-    must not NaN the cluster average (matches exp008's helper)."""
+    must not NaN the cluster average."""
     fams = [_family(u["name"]) for u in units]
     idx = {f: [i for i, fa in enumerate(fams) if fa == f] for f in ("FP", "INT", "MEM")}
     return (float(np.nanmean(corr[np.ix_(idx["FP"], idx["MEM"])])),

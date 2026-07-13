@@ -1,37 +1,12 @@
-"""exp023: does risk-aware placement pay in the regime its mechanism predicts?
-
-This is the mechanism-favorable test, NOT benchmark shopping: the regime
-(heterogeneous SoC, each workload class driving a different thermally heavy
-engine) is chosen because exp009's mechanism analysis says it is where the
-theory should operate — and the design pre-registers the falsification branch
-with equal standing. Every evaluation trap this project discovered is
-controlled:
-
-  * budget trap (exp013):    all arms 120 iterations, tail arms also checked
-                             at 240 (reported if it changes the verdict);
-  * grid trap (exp018/020):  training uses raster_jitter=1.0 (exp022's fix);
-                             ALL evaluation at 64x64;
-  * baseline trap (exp019):  the mean arm is best-of-3 restarts, selected on
-                             its training objective.
-
-Design (ev-style single testbed; stylised SoC from workloads/hetero_soc.py):
-  GATE (validity, enforced): across the 6 workload modes the hotspot cell at
-      the initial tiling must move between >= 3 distinct blocks; otherwise
-      the regime construction failed and NO verdict prints.
-  E1 (existence): oracle D* = CVaR(mean-oracle) - CVaR(cvar-oracle),
-      N_ORACLE=1000, 5 independent pairs, paired CI. D* CI > 0 is the
-      theory's existence claim in its favorable regime.
-  E2 (learnability): mean-strong vs cvar vs blend(0.75) at N_TRAIN in
-      {32, 128}, 5 seeds, dCVaR/dMean vs the STRONG mean baseline.
-PRE-REGISTERED READINGS:
-  - PAYS if E1 D* CI > 0 AND E2 shows dCVaR CI > 0 with dMean <= 0 at some N
-    (the genuine mean-for-tail trade, against a strong baseline, trap-free):
-    quantified as "risk-aware placement buys [D*] K of true tail under
-    heavy-anti-correlated multimodal workloads".
-  - DOES NOT PAY if E1 CI <= 0 everywhere here — under the MOST favorable,
-    trap-controlled conditions the theory's effect does not exist; the
-    hypothesis is dead for practical purposes and is reported so.
-  - MIXED readings report both quantities without a slogan.
+"""Oracle gap and learnability on the stylised hetero-SoC testbed
+(workloads/hetero_soc.py, 6 workload modes), with a fail-closed validity
+gate: across the modes the initial-tiling hotspot must move between >= 3
+distinct blocks or no verdict prints. E1 (existence): oracle D* =
+CVaR(mean-oracle) - CVaR(cvar-oracle), N_ORACLE=1000, 5 independent pairs,
+paired CI. E2 (learnability): mean-strong (best-of-3 restarts, selected on
+its training objective) vs cvar vs blend(0.75) at N_TRAIN in {32, 128}, 5
+seeds, dCVaR/dMean vs the strong mean baseline. All arms 120 iterations,
+train@18 with raster_jitter=1.0, ALL evaluation at 64x64; alpha=0.9.
 """
 
 from __future__ import annotations
@@ -188,7 +163,7 @@ def main():
                  f"dMean={gm:+.3f} [{mlo:+.3f},{mhi:+.3f}]")
             e2[n][arm] = (gc, lo, gm, mhi)
 
-    # Pre-registered verdict.
+    # Verdict.
     trade = [(n, a) for n in N_TRAINS for a in ("cvar", "blend")
              if e2[n][a][1] > 0 and e2[n][a][2] <= 0]
     if D_lo > 0 and trade:

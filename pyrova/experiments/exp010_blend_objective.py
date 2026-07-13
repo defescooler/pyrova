@@ -1,43 +1,10 @@
-"""exp010: can a MODIFIED risk objective earn a positive where pure CVaR failed?
-
-Pure CVaR-opt's small-N failures are tail OVERFITTING (exp003/exp004: dominated on
-both metrics) and the Wasserstein-DRO penalty did not fix that (exp007:
-inert-to-harmful). The untested regulariser is MEAN-ANCHORED SHRINKAGE of the tail
-objective:
-
-    J_gamma(p) = (1 - gamma) * mean(peaks) + gamma * CVaR_alpha(peaks),   gamma in [0,1]
-
-gamma=0 is mean-opt, gamma=1 is pure CVaR-opt. This shrinks the high-variance
-empirical-CVaR gradient toward the low-variance mean gradient (bias/variance
-trade) — a regulariser matched to the measured failure mode, unlike the DRO
-penalty (which robustifies against distribution shift the i.i.d./structured
-samplers do not have).
-
-PRE-REGISTERED PREDICTIONS (fixed before running):
-  (a) STRUCTURED arm, N_TRAIN=16/32 (noisy-tail regime): some intermediate gamma
-      beats PURE CVaR on OOS CVaR (vs_cvar1 paired CI>0) — shrinkage recovers
-      part of the tail signal that pure CVaR loses to overfitting.
-  (b) STRUCTURED arm, N_TRAIN=128 (learnable regime): pure CVaR is no longer
-      beaten (vs_cvar1 CI includes or is below 0 for all gamma<1) — with a
-      well-estimated tail, shrinkage only adds bias.
-  (c) IID control: no gamma>0 beats mean-opt on OOS CVaR (exp003: D*~=0 -> the
-      mean placement already is the tail optimum; any tail term is pure noise).
-  (d) BOOM real-workload arm (if BOOM_DATA present): prior is the exp009
-      mechanism-null (stable hotspot, FP thermally light), so NO gamma is
-      expected to beat mean-opt with the NB-corrected CI. A positive here would
-      be the first real-workload win; a null is an acceptable, informative
-      falsification of the "objective was just too aggressive" hypothesis.
-
-Falsification of the whole idea: (a) failing means even matched-to-failure-mode
-regularisation cannot rescue small-N risk-aware placement on this problem; the
-conclusion is then that the N needed for any tail objective exceeds what
-overfitting allows, independent of the regulariser.
-
-Metrics: per (arm, N, gamma): (OOS mean, OOS CVaR) on a large holdout; paired
-  vs_mean  = CVaR(mean-opt) - CVaR(gamma)   (>0: beats mean on tail)
-  vs_cvar1 = CVaR(pure-CVaR) - CVaR(gamma)  (>0: beats pure CVaR — the (a) test)
-95% t-CIs across seeds (synthetic arms) / Nadeau-Bengio-corrected CIs across
-repeated splits (BOOM arm). Same estimator trains and scores (metrics.cvar).
+"""Blend-objective comparison: J_gamma = (1-gamma)*mean + gamma*CVaR_alpha,
+gamma in {0, 0.25, 0.5, 0.75, 1}, paired within seed/split. Arms: structured
+and i.i.d. synthetic on ev6 (N_train in {16, 32, 128}, 5 seeds, 1500-scenario
+holdout, 95% t-CIs) and BOOM real workloads (10 repeated 40/40 splits,
+Nadeau-Bengio-corrected CIs; needs BOOM_DATA). Per (arm, N, gamma): OOS
+mean/CVaR plus paired vs_mean = CVaR(gamma=0) - CVaR(gamma) and
+vs_cvar1 = CVaR(gamma=1) - CVaR(gamma), same estimator training and scoring.
 """
 
 from __future__ import annotations
@@ -206,7 +173,7 @@ def main():
     else:
         emit("\n=== arm: BOOM — SKIPPED (BOOM_DATA not found) ===")
 
-    # Verdict vs pre-registration
+    # Verdict block
     emit("\nVERDICT vs pre-registration:")
     a_hits = [(n, g) for n in (16, 32) for g in GAMMAS[1:-1]
               if conc_st[n][g]["vs_cv1_lo"] > 0]

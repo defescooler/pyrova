@@ -1,0 +1,9 @@
+BOOM hardened: 80 programs, 60/20 x 40 splits, alpha=0.9, best-of-3 restarts (CRN), train@18+jitter -> guaranteed-legal eval@64, 120 it. arms=['cvar', 'cvar_wide', 'blend']. [full run]
+
+NB half-width factor sqrt(1/J + n_te/n_tr) = 0.60 sd
+  cvar      : dCVaR=-0.128 NB-CI[-2.712,+2.455]  dMean=-1.364  (trade)
+  cvar_wide : dCVaR=+0.599 NB-CI[-0.353,+1.551]  dMean=+0.259  (domination)
+  blend     : dCVaR=+0.579 NB-CI[-0.807,+1.965]  dMean=-0.168  (trade)
+
+===== PRE-REGISTERED VERDICT =====
+UNDERPOWERED/NULL: no arm's dCVaR NB-CI clears 0. The 80-program pool cannot resolve the placement question at this tail; the lever is more programs, not more method.

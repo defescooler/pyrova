@@ -1,30 +1,11 @@
-"""How much workload structure does CVaR placement need? — a correlation-threshold sweep.
-
-exp005 showed pure-CVaR placement beats the mean under ONE hand-designed
-anti-correlated workload (measured corr(FP,MEM)=-0.35); exp006 found the only real
-trace (gcc) positively correlated (+0.64) with a null. This sweeps the cross-cluster
-correlation to find the threshold corr* where CVaR stops helping, then locates gcc's
-+0.64 relative to it.
-
-Workload: `CorrelatedWorkloadModel` (workloads/structured.py) — a DISCRETE-mode model (so the
-CVaR tail is a sharp, learnable hotspot, unlike a continuous model whose tail is noise) with
-a knob `mix` in [0,1] interpolating from CONTRAST modes (one cluster hot at a time -> clusters
-anti-correlate, mix=0) to COMMON modes (clusters co-activate -> positive correlation, mix=1).
-Realized corr(FP,MEM)/corr(FP,INT) are MEASURED and form the x-axis; `mix` is only the knob.
-
-Metric: de-confounded dCVaR/dMean per mix (= mean-opt minus CVaR-opt) on a large
-holdout with 95% CIs, at a learnable N, as exp004/exp005 (definitions there).
-
-VALIDITY GATE (ENFORCED IN CODE, not just documented). The sweep is only trustworthy if it
-reproduces the known endpoints: the anti-correlated anchor (mix=0) must give dCVaR
-significantly > 0 (the exp005 result), and the co-activated anchor (mix=1) must give
-dCVaR <= 0 (no separable tail dimension). If either fails, the script prints GATE FAILED
-and refuses to emit a threshold interpretation.
-
-KNOWN CONFOUND (measured and printed per mix): `mix` also moves the total-power CV
-(anti-correlated modes nearly cancel in the total) and the mean hot-block power, partly
-intrinsically. The x-axis is really "mode-family composition", not correlation in
-isolation — any finding is about the model's mode families, not correlation per se.
+"""Correlation-threshold sweep: mean-opt vs CVaR-opt as CorrelatedWorkloadModel's
+mix knob moves from CONTRAST (anti-correlated clusters, mix=0) to COMMON
+(co-activated, mix=1) mode families; realized corr(FP,MEM)/corr(FP,INT) are
+measured and form the x-axis. Per mix: paired dCVaR/dMean (= mean-opt minus
+CVaR-opt) at N_TRAIN=128, alpha=0.9, on a 1500-scenario holdout with 95% t-CIs
+over 8 seeds, plus measured total-power-CV and hot-block-power confound
+columns; fail-closed anchor gates at mix=0 (dCVaR CI>0 required) and mix=1
+(dCVaR not significantly >0 required) block any threshold interpretation.
 """
 
 from __future__ import annotations
@@ -46,7 +27,7 @@ from pyrova.workloads.structured import CorrelatedWorkloadModel, _family
 FLP = PKG / "inputs/floorplans/ev6.flp"
 CONFIG = PKG / "inputs/configs/thermal.config"
 ALPHA = 0.90
-N_TRAIN = 128          # learnable regime (exp005: dCVaR significant at N>=64)
+N_TRAIN = 128          # learnable regime
 N_TEST = 1500          # large holdout so OOS ~= true
 N_SEEDS = 8
 NR = NC = 18
@@ -132,9 +113,9 @@ def main():
              f"{st['mean_hot_block_w']:>6.1f} | {gc:>+7.2f}{flag} "
              f"[{c_lo:>+6.2f},{c_hi:>+6.2f}] | {gm:>+7.2f}")
 
-    # Pre-registered validity gates (BOTH enforced)
+    # Validity gates (BOTH enforced)
     anti, common = rows[0], rows[-1]
-    gate_anti = anti["lo"] > 0                    # must reproduce exp005's positive
+    gate_anti = anti["lo"] > 0                    # anchor must show dCVaR CI>0
     gate_common = not (common["lo"] > 0)          # must NOT be significantly positive
     emit("")
     emit(f"GATE 1 anti-corr anchor (mix=0, corr={anti['fm']:+.2f}): dCVaR={anti['gc']:+.2f} "

@@ -1,0 +1,19 @@
+die-size sweep [hetero_soc workload, geometry-only]: scales=[0.25, 0.4, 0.63, 1.0], target mean peak dT=40K, N_ORACLE=2000, 6 pairs, 100 it, train@18+jitter -> guaranteed-legal eval@64 (alpha=0.9). [full run]
+
+scale=0.25: die 2.8x3.3mm (9mm^2), power x0.880 (tiled mean peak 45.5K) | G1 hotspot blocks over modes: 6 ['ISP', 'MediaEng', 'Modem_IO', 'NPU', 'SLC', 'Uncore'] -> PASS
+  scale=0.25: D*=+0.1680 [-0.5344,+0.8704] dMean=-0.2450  (n=6 pairs)
+
+scale=0.40: die 4.4x5.2mm (23mm^2), power x1.635 (tiled mean peak 24.5K) | G1 hotspot blocks over modes: 6 ['ISP', 'MediaEng', 'Modem_IO', 'NPU', 'SLC', 'Uncore'] -> PASS
+  scale=0.40: D*=+0.1123 [-0.4736,+0.6983] dMean=-0.1592  (n=6 pairs)
+
+scale=0.63: die 6.9x8.2mm (57mm^2), power x2.966 (tiled mean peak 13.5K) | G1 hotspot blocks over modes: 6 ['ISP', 'MediaEng', 'Modem_IO', 'NPU', 'SLC', 'Uncore'] -> PASS
+  scale=0.63: D*=+0.1143 [-0.3725,+0.6010] dMean=-0.1621  (n=6 pairs)
+
+scale=1.00: die 11.0x13.0mm (143mm^2), power x5.219 (tiled mean peak 7.7K) | G1 hotspot blocks over modes: 5 ['ISP', 'MediaEng', 'NPU', 'SLC', 'Uncore'] -> PASS
+  scale=1.00: D*=+0.1287 [-0.0863,+0.3437] dMean=-0.0588  (n=6 pairs)
+
+G2 (legality): max overlap 0.000%, 0 infeasible -> PASS
+
+===== PRE-REGISTERED VERDICT =====
+paired D*(0.25) - D*(1.00) = +0.0393 [-0.5370,+0.6156] (p=0.8676, n=6); D*(0.25) = +0.1680 [-0.5344,+0.8704]
+NULL: the paired cross-scale difference does not certify a die-size effect; the observed magnitude spread must be attributed to workload structure until a larger sweep says otherwise.

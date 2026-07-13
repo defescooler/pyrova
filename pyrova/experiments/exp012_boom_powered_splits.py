@@ -1,24 +1,7 @@
-"""exp012: a better-powered split design for the BOOM real-workload placement test.
-
-exp009/exp010 used 40/40 x 10 repeated splits; the Nadeau-Bengio CI half-width
-scales with sqrt(1/J + n_test/n_train) = sqrt(0.1 + 1) ~= 1.05 sd. This
-redesign uses 60/20 x 20 splits: sqrt(1/20 + 1/3) ~= 0.62 sd — a ~1.7x tighter
-CI from the SAME 80 programs. Trade-off (stated up front): the 20-program test
-tail at alpha=0.9 is ~2 programs, so per-split scoring noise rises; NB accounts
-for split overlap, not for tail-of-2 estimator noise, so per-split deltas are
-noisier but unbiased, and J=20 averages that out.
-
-Arms (paired within each split): gamma in {0 (mean-opt), 0.75 (blend), 1 (pure
-CVaR)} — exp010's BOOM point estimates ranked gamma=0.75 best on BOTH metrics
-(vs_mean +0.97 ns). This is the confirmation/kill test for that estimate.
-
-PRE-REGISTERED READING:
-  - CONFIRMED if vs_mean(gamma=0.75) NB-CI > 0 for dCVaR (first real-workload win).
-  - Weak support if the point estimate stays positive with the tighter CI still
-    spanning 0 -> more programs (not more splits) is the only remaining lever.
-  - Kill if the point estimate collapses toward 0 or negative.
-Also reports dMean side by side (domination vs mean-for-tail reading), and the
-same table for gamma=1 to keep continuity with exp009's dCVaR.
+"""Powered BOOM split design: paired arms gamma in {0 (mean-opt), 0.75 (blend),
+1 (pure CVaR)} over 20 repeated disjoint 60/20 splits of the 80-program pool
+(needs BOOM_DATA), 30 iterations at grid 18x18, alpha=0.9; per gamma, OOS
+mean/CVaR and dCVaR/dMean vs mean-opt with Nadeau-Bengio-corrected CIs.
 """
 
 from __future__ import annotations
@@ -95,7 +78,8 @@ def main():
     means = {g: [] for g in GAMMAS}
     cvars = {g: [] for g in GAMMAS}
     for seed in range(N_SPLITS):
-        # Fresh stream family, disjoint from exp009/exp010 (seed offset 40_000).
+        # Fresh split-RNG stream family (seed offset 40_000), disjoint from
+        # the other BOOM split designs.
         perm = np.random.default_rng(40_000 + seed).permutation(n)
         tr = [scen[i] for i in perm[:N_TRAIN]]
         te = [scen[i] for i in perm[N_TRAIN:]]

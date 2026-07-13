@@ -1,35 +1,14 @@
-"""exp025: does risk-aware placement pay on a real-silicon-anchored SoC?
-
-exp023 confirmed the mechanism exists (+0.068 K) on the INVENTED hetero-SoC.
-Kraken is the same regime exhibited by real silicon: a multi-sensor nano-UAV
-SoC whose subsystems are duty-cycled by the application (event-driven SNE vs
-frame-driven CUTIE vs cluster DSP), with per-subsystem powers MEASURED on
-chip (workloads/kraken_soc.py carries the provenance and the ASSUMED items:
-non-CUTIE areas, sub-block power splits, duty cycles). Scale is normalized to
-a target peak dT (exp021 BOOM protocol) — only cross-mode/cross-block
-structure is claimed.
-
-Every evaluation trap is controlled (the exp023 template):
-  budget (exp013):   all arms 120 iterations;
-  grid (exp018/020): raster_jitter=1.0 training [exp022]; ALL eval at 64x64;
-  baseline (exp019): mean arm is best-of-3 restarts, training-objective pick.
-
-Design:
-  GATE (validity, enforced): across the 6 measured modes the hotspot at the
-      initial tiling must span >= 3 distinct blocks; else no verdict.
-  E1 (existence): oracle D* = CVaR(mean-oracle) - CVaR(cvar-oracle),
-      N_ORACLE=1000, 5 independent pairs, paired CI.
-  E2 (learnability): mean-strong vs cvar vs blend(0.75) at N in {32, 128},
-      5 seeds, dCVaR/dMean vs the STRONG mean baseline.
-PRE-REGISTERED READINGS (mirror exp023):
-  - PAYS if E1 D* CI > 0 AND some E2 cell has dCVaR CI > 0 with dMean <= 0:
-    the exp023 existence result extends to a measurement-anchored model of
-    real silicon (still NOT a real-traces result — scope stays one rung down).
-  - DOES NOT PAY if E1 CI <= 0 — the favorable-regime result does not extend
-    to this real mode structure; report which regime stat differs from
-    hetero-SoC (candidate: the 373 mW fusion mode co-activates everything,
-    compressing hotspot mobility).
-  - MIXED: report both quantities, no slogan.
+"""Oracle gap and learnability on the measurement-anchored Kraken SoC model
+(workloads/kraken_soc.py carries the per-number provenance and the ASSUMED
+items: non-CUTIE areas, sub-block power splits, duty cycles; total power
+rescaled to a target probability-weighted mean peak dT of 40 K), with a
+fail-closed validity gate: across the 6 modes the initial-tiling hotspot
+must span >= 3 distinct blocks or no verdict prints. E1 (existence): oracle
+D* = CVaR(mean-oracle) - CVaR(cvar-oracle), N_ORACLE=1000, 5 independent
+pairs, paired CI. E2 (learnability): mean-strong (best-of-3 restarts,
+training-objective pick) vs cvar vs blend(0.75) at N_TRAIN in {32, 128}, 5
+seeds, dCVaR/dMean vs the strong mean baseline. All arms 120 iterations,
+train@18 with raster_jitter=1.0, ALL evaluation at 64x64; alpha=0.9.
 """
 
 from __future__ import annotations
@@ -59,7 +38,7 @@ N_TRAINS = [32, 128]
 N_SEEDS = 5
 N_TEST = 1000
 JITTER = 1.0
-TARGET_PEAK = 40.0   # exp021 BOOM protocol: probability-weighted mean peak dT
+TARGET_PEAK = 40.0   # probability-weighted mean peak dT calibration target
 
 
 def chip_box(units):
@@ -110,7 +89,7 @@ def main():
     def emit(s=""):
         print(s, flush=True); fh.write(s + "\n"); fh.flush()
 
-    # Scale calibration (exp021 protocol): weighted mean pure-mode peak = target.
+    # Scale calibration: weighted mean pure-mode peak = target.
     model0 = KrakenWorkloadModel(units, seed=0)
 
     def peaks_fn(scen):
@@ -206,7 +185,7 @@ def main():
                  f"dMean={gm:+.3f} [{mlo:+.3f},{mhi:+.3f}]")
             e2[n][arm] = (gc, lo, gm, mhi)
 
-    # Pre-registered verdict.
+    # Verdict.
     trade = [(n, a) for n in N_TRAINS for a in ("cvar", "blend")
              if e2[n][a][1] > 0 and e2[n][a][2] <= 0]
     if D_lo > 0 and trade:

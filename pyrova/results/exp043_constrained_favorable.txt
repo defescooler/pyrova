@@ -1,0 +1,19 @@
+constrained+favorable [ami33 nets x modal power]: 33 blocks, 78 nets, die 10.4x10.4mm (scale 1), engines=['bk12', 'bk13', 'bk17a', 'bk20', 'bk4', 'bk8b']. N_ORACLE=2000, 5 pairs, 100 it, train@18+jitter -> guaranteed-legal eval@64 (alpha=0.9). lambda=[0.0, 1000.0, 3000.0, 10000.0]. [full run]
+calibration: benchmark-layout mean peak 17.6K -> power x2.267 for a 40K operating point
+G0 (mechanism): hotspot blocks over modes: 4 ['bk1', 'bk14c', 'bk3', 'bk7'] -> PASS
+  lambda=     0 cvar     : D*=-0.0041 [-0.0350,+0.0267] dMean=+0.0022  (legal HPWL 466.7mm)
+  lambda=     0 cvar_wide: D*=+0.0044 [-0.0093,+0.0181] dMean=+0.0088  (legal HPWL 466.7mm)
+  lambda=  1000 cvar     : D*=-0.0001 [-0.0141,+0.0138] dMean=+0.0012  (legal HPWL 408.0mm)
+  lambda=  1000 cvar_wide: D*=+0.0137 [+0.0004,+0.0271] dMean=+0.0134  (legal HPWL 408.0mm)
+  lambda=  3000 cvar     : D*=+0.0025 [-0.0068,+0.0119] dMean=+0.0127  (legal HPWL 394.7mm)
+  lambda=  3000 cvar_wide: D*=+0.0037 [-0.0081,+0.0155] dMean=+0.0152  (legal HPWL 394.7mm)
+  lambda= 10000 cvar     : D*=+0.0001 [-0.0091,+0.0093] dMean=+0.0070  (legal HPWL 388.9mm)
+  lambda= 10000 cvar_wide: D*=+0.0028 [-0.0084,+0.0140] dMean=+0.0068  (legal HPWL 388.9mm)
+
+G1 (constraint binds): 466.7->388.9mm (83.3%) -> PASS
+G2 (legality): max overlap 0.000%, 0 infeasible -> PASS
+
+===== PRE-REGISTERED VERDICT =====
+unconstrained existence, cvar: D*(0)=-0.0041 [-0.0350,+0.0267] (ns)
+unconstrained existence, cvar_wide: D*(0)=+0.0044 [-0.0093,+0.0181] (ns)
+NULL: no lambda>0 cell is Holm-sig>0 with dMean<=0 and D*(lambda)>=D*(0) — with both ingredients present, scarcity did not certify a payoff.

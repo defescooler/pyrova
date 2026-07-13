@@ -1,35 +1,10 @@
-"""exp013: are the negative CVaR results an OPTIMIZER artifact? + exp010 anomaly check.
-
-PART A — the D* < 0 red-flag argument.
-For the POPULATION objectives, min_p CVaR(p) <= CVaR(p_mean-opt): population
-D* >= 0 for exact optimisation. At finite N_ORACLE a small negative D* can
-also arise from the CVaR estimator's higher variance, so a significantly
-negative measurement must be ATTRIBUTED — estimation vs optimisation — by
-intervention (budget response separates them: estimator noise is invariant to
-budget). exp003 measured D* = -0.127 K CI[-0.24,-0.01] (ev6, N_ORACLE=1500);
-this experiment performs the attribution. The optimisation explanation is
-plausible a priori because (i) only
-~(1-alpha) of scenarios contribute gradient per step (~10x noisier at
-alpha=0.9) and (ii) the objective is a nonsmooth max-of-max. Equal Adam
-iterations across arms is equal COMPUTE, not equal optimisation QUALITY — a
-confound the de-confounded metric never addressed.
-
-Test: at large N (overfitting negligible), give the CVaR arm more optimisation
-quality and see whether its own-metric deficit closes:
-    arms: mean(std) / mean(best-of-3) / cvar(std) / cvar(4x iters) / cvar(best-of-3)
-    deficit(arm) = OOS CVaR(arm) - OOS CVaR(mean(std))   [>0: red flag; attribute by budget response]
-PRE-REGISTERED READING:
-  - If cvar(4x) or cvar(bo3) closes >= half of cvar(std)'s deficit: the suite's
-    "CVaR is harmful" i.i.d. findings are substantially OPTIMIZER-INDUCED;
-    method work (smoothed CVaR, variance-reduced gradients, restarts) is
-    warranted before believing any negative.
-  - If the deficit persists under both: both arms sit in local optima and the
-    CVaR landscape is intrinsically harder for this pipeline; negatives are
-    about THIS optimiser, and claims should be phrased as such either way.
-
-PART B — replicate exp010's anomalous i.i.d. cell (N=16, gamma=0.5, vs_mean
-+0.30* unadjusted; contradicts D*<=0). 20 fresh seeds, paired.
-PRE-REGISTERED: real if the 20-seed CI is again strictly > 0; otherwise noise.
+"""Optimizer-budget attribution, i.i.d. on ev6. Part A: own-metric OOS-CVaR
+deficit vs mean(std) across arms mean(std) / mean(best-of-3) / cvar(std) /
+cvar(4x iterations) / cvar(best-of-3) at N_ORACLE=1000 (3 pairs, N_TEST=4000),
+restart selection on the training objective only; the budget response
+attributes a deficit to optimisation vs estimation (estimator noise is
+budget-invariant). Part B: paired vs_mean for blend gamma=0.5 at N_train=16
+over 20 fresh seeds with a 95% t-CI.
 """
 
 from __future__ import annotations
@@ -171,7 +146,7 @@ def main():
         emit("  PART A READING: cvar-std shows no deficit at this N/grid — the exp003 "
              "D*<0 did not reproduce under this protocol; reconcile before further claims.")
 
-    # Part B: exp010 anomaly replication
+    # Part B
     emit(f"\nexp013 PART B: replicate exp010 iid anomaly (N={N_TRAIN_B}, gamma=0.5), "
          f"{N_SEEDS_B} fresh seeds, N_TEST={N_TEST_B}.")
     dC = []

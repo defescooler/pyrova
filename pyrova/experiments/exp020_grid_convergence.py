@@ -1,30 +1,9 @@
-"""exp020: does grid-converged training restore the structured mean-for-tail trade?
-
-exp018 found training-grid overfitting: placements optimised at 18x18 hold
-their dCVaR advantage only when evaluated at 18x18; at an independent 32x32
-evaluation the advantage reverses (matched-grid diagnostic exp018b: our@32 vs
-ref@32 agree to 2.7 mK with dCVaR signs agreeing, so this is the optimiser
-exploiting discretisation artifacts, the tail arm harder). The
-decisive question for claim 6 (docs/CLAIMS.md): does the advantage converge to
-a positive value as the TRAINING grid is refined, when everything is evaluated
-at one fine reference resolution?
-
-Design: hand-built structured family, N_TRAIN=128, alpha=0.95 (the exp005
-survivor cell), 5 seeds (exp016-G seed scheme). Train mean-opt and cvar-opt at
-R in {18, 24, 30}; evaluate EVERY placement at 64x64 with our solver
-(validated to 2.7 mK against the reference binary at matched grids, exp018b),
-on a common 500-scenario holdout per seed. Report dCVaR(train@R, eval@64) with
-paired 95% t-CIs, i.e. the transfer curve in training resolution.
-
-PRE-REGISTERED READING:
-  - RESTORED if dCVaR(train@30, eval@64) CI > 0: claim 6 becomes "real, but
-    requires grid-converged training"; the 18x18 protocol under-resolves.
-  - ARTIFACT if the curve stays <= 0 (CI not above 0) at every R: the
-    structured mean-for-tail trade as measured was a discretisation artifact;
-    claim 6 is WITHDRAWN and the paper's Section VI-B is rewritten around the
-    overfitting finding itself.
-  - Either way, the dCVaR-vs-R curve for each arm is the characterisation of
-    the overfitting mode promised in the paper.
+"""Training-resolution transfer curve for the structured mean-vs-cvar
+comparison: mean-opt and cvar-opt trained at grids R in {18, 24, 30}
+(hand-built structured family, N_TRAIN=128, alpha=0.95, 30 iterations, 5
+seeds), EVERY placement evaluated at 64x64 with our solver on a common
+500-scenario holdout per seed. Reports dCVaR(train@R, eval@64) with paired
+95% t-CIs.
 """
 
 from __future__ import annotations

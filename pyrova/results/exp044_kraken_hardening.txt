@@ -1,0 +1,10 @@
+kraken headline hardening: 10 blocks, die 2.8x3.2mm. 20 independent oracle pairs (was 5), N_ORACLE=2000, 100 it, symmetric single-start + CRN, train@18+jitter -> guaranteed-legal eval@64 (alpha=0.9). [full run]
+calibration: tiled mean peak 0.3K -> power x118.622 for a 40K operating point
+G0 (mechanism): hotspot blocks over modes: 3 ['CL_TCDM', 'CUTIE_FMEM', 'SNE_1'] -> PASS
+
+G2 (legality): max overlap 0.000%, 0 infeasible -> PASS
+
+===== PRE-REGISTERED VERDICT =====
+D* = +0.6277 K CI95[-0.2016,+1.4569] (p=0.12965, n=20 pairs; was 5-pair [+0.94,+2.66])
+dMean = +0.1396 [-0.0147,+0.2939] -> domination (check optimizer)
+NOT HARDENED: the 20-pair CI includes 0 — the 5-pair CI was optimistic; the headline must be requalified accordingly.

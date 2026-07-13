@@ -1,26 +1,11 @@
-"""Multi-program real-workload test: does CVaR placement help on real RISC-V workloads?
-
-Uses the mcpat-calib BOOM dataset: 80 real benchmarks with per-functional-unit McPAT
-power on a RISC-V BOOM core — the genuine ACROSS-program workload distribution at
-functional-block granularity that exp006 lacked (its only bundled trace was gcc, a
-single program). Data is GPL-3.0 and NOT bundled; clone it and set BOOM_DATA (see
-pyrova/workloads/boom_traces.py).
-
-Two questions, two confidence levels:
-
-  (1) STRUCTURE (data-only, robust): do real workloads have the anti-correlated functional
-      clusters the theory needs? Measured cross-program corr(FP,INT)/(FP,MEM)/(INT,MEM) and
-      total-power CV. This needs no floorplan and no placement, so it is the solid result.
-
-  (2) PLACEMENT (geometry-contingent): does CVaR-opt beat mean-opt out-of-sample on these
-      real programs? De-confounded dCVaR/dMean (= mean-opt minus CVaR-opt) over disjoint
-      train/test splits of the 80 programs. Caveat: the floorplan layout is synthesised from
-      McPAT component areas (gridded), so this result depends on a geometry choice and is
-      reported with that caveat — do not over-read a point estimate that is not significant.
-
-Priors going in: real corr(FP,INT) is strongly negative (good for the theory) but FP
-is thermally light (~1.5% of power) and the hot INT/MEM clusters are positively correlated,
-so a placement benefit is not guaranteed even with the right correlation sign.
+"""BOOM real-workload test on the mcpat-calib dataset (80 RISC-V benchmarks,
+per-functional-unit McPAT power; GPL-3.0, not bundled — clone it and set
+BOOM_DATA, see pyrova/workloads/boom_traces.py). Reports (1) measured
+cross-program corr(FP,INT)/(FP,MEM)/(INT,MEM) and total-power CV across
+configs, plus FP power share and hotspot-cell stability; (2) paired
+dCVaR/dMean (= mean-opt minus CVaR-opt) over 10 repeated disjoint 40/40
+splits with Nadeau-Bengio-corrected CIs, on a layout synthesised from McPAT
+component areas.
 """
 
 from __future__ import annotations
@@ -91,7 +76,8 @@ def main():
     emit("\n(1) REAL cross-program structure (data-only, robust):")
     emit(f"    corr(FP,INT)={c['FP_INT']:+.3f}  corr(FP,MEM)={c['FP_MEM']:+.3f}  "
          f"corr(INT,MEM)={c['INT_MEM']:+.3f}   total-power CV={wl.total_power_cv():.3f}")
-    # Cross-config robustness computed HERE (previously an unrecorded ad-hoc claim).
+    # Cross-config robustness is computed in-script so the claim carries its
+    # own recorded provenance rather than resting on an ad-hoc side check.
     for cid in ("1", "2", "3"):
         try:
             wc = BoomWorkload(csvp, rptp, config_id=cid)

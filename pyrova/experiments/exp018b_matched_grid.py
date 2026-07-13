@@ -1,25 +1,11 @@
-"""exp018b: the MATCHED-GRID solver-vs-reference diagnostic exp018 never ran.
-
-exp018 compared OUR solver at 18x18 against the reference binary at 32x32 -- a
-resolution-CONFOUNDED comparison (its per-scenario MAE of 1.5-3.0 K mixes model
-disagreement with the 18-vs-32 discretisation gap), and it reported a dCVaR sign
-flip. CLAUDE.md then quoted a "matched 32^2, MAE = 2.8 mK, r = 1.000000"
-validation that appears in NO run -- exp018 has no matched-grid arm. This script
-supplies the missing matched comparison and the honest number.
-
-For the same optimised placements exp018 used (structured N=128, alpha=0.95,
-mean-opt vs cvar-opt, trained at 18^2), evaluate every test scenario in BOTH
-solvers at the SAME 32x32 grid, so the only difference is the solver/model, not
-the resolution:
-
-  * per-scenario peak-dT MAE and correlation r  (the real model-agreement number);
-  * dCVaR at matched 32^2 for our solver and for the reference -- if the signs
-    AGREE at matched resolution, the exp018 flip was resolution (training-grid
-    overfitting: our@18 vs our@32), NOT model disagreement; if they still
-    disagree, it is genuine model disagreement.
-
-Reference die inference is pinned with corner markers (exp018.hotspot_peak).
-Writes pyrova/results/exp018b_matched_grid.txt.
+"""Matched-grid solver-vs-reference diagnostic: mean-opt and cvar-opt
+placements (structured family, N_TRAIN=128, alpha=0.95, trained at 18^2, 2
+seeds) are evaluated in BOTH our solver and the reference binary at the SAME
+32x32 grid, so the only difference is the model, not the resolution. Reports
+per-scenario peak-dT MAE and correlation r, plus dCVaR per solver with a
+sign-agreement check; 80 test scenarios per (seed, arm). Reference die
+inference is pinned with corner markers via the imported
+exp018_hotspot_crosscheck.hotspot_peak.
 """
 
 from __future__ import annotations
@@ -44,7 +30,7 @@ from pyrova.experiments.exp018_hotspot_crosscheck import (hotspot_peak, chip_box
 CONFIG = PKG / "inputs/configs/thermal.config"
 FLP = PKG / "inputs/floorplans/ev6.flp"
 MATCH_GRID = 32          # BOTH solvers evaluated here
-TRAIN_GRID = 18          # placements trained here (as in exp018 / exp005)
+TRAIN_GRID = 18          # placements trained here
 ALPHA = 0.95
 N_TEST = 80              # reference solves per (seed, arm) -- keep runtime sane
 N_SEEDS = 2

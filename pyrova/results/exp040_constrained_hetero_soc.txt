@@ -1,0 +1,15 @@
+constrained payoff [hetero_soc]: 12 blocks, 6 nets, die 11.0x13.0mm. N_ORACLE=2000, 5 pairs, 100 it, train@18+jitter -> guaranteed-legal eval@64 (alpha=0.9). lambda=[0.0, 1000.0, 3000.0, 10000.0]. [full run]
+  lambda=     0 cvar     : D*=+0.0320 [-0.0025,+0.0666] dMean=+0.0078  (legal HPWL 67.3mm)
+  lambda=     0 cvar_wide: D*=+0.0398 [-0.0111,+0.0906] dMean=+0.0122  (legal HPWL 67.3mm)
+  lambda=  1000 cvar     : D*=-0.0043 [-0.0261,+0.0174] dMean=-0.0020  (legal HPWL 65.0mm)
+  lambda=  1000 cvar_wide: D*=-0.0046 [-0.0251,+0.0158] dMean=+0.0009  (legal HPWL 65.0mm)
+  lambda=  3000 cvar     : D*=+0.0231 [-0.0098,+0.0561] dMean=+0.0163  (legal HPWL 65.0mm)
+  lambda=  3000 cvar_wide: D*=+0.0304 [-0.0133,+0.0742] dMean=+0.0158  (legal HPWL 65.0mm)
+  lambda= 10000 cvar     : D*=-0.0088 [-0.0314,+0.0138] dMean=-0.0104  (legal HPWL 64.8mm)
+  lambda= 10000 cvar_wide: D*=-0.0100 [-0.0211,+0.0011] dMean=-0.0075  (legal HPWL 64.8mm)
+
+G1 (constraint binds): 67.3->64.8mm (96.3%) -> FAIL - legal wire range too small; question ill-posed on this testbed (no legal scarcity to allocate)
+G2 (legality): max overlap 0.000%, 0 infeasible -> PASS
+
+===== PRE-REGISTERED VERDICT =====
+NO VERDICT — a gate failed or too few feasible pairs.

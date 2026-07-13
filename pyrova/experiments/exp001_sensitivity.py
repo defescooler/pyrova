@@ -1,4 +1,9 @@
-"""Measure how much workload-optimal placements differ via a cross-performance matrix."""
+"""Cross-workload sensitivity figure: one mean-objective placement p^j is
+optimised per workload xi^j, the full cross-performance matrix
+M[i,j] = M(p^i, xi^j) is evaluated, and each placement's worst-case regret
+max_j (M[i,j] - M[j,j]) is reported as a heatmap + bar chart. Single seed,
+no CIs — a motivation figure, not a hypothesis test.
+"""
 
 from __future__ import annotations
 import sys
@@ -9,7 +14,6 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-# Paths
 HERE = Path(__file__).resolve().parent          # pyrova/experiments
 PKG  = HERE.parent                               # pyrova
 REPO = PKG.parent                                # repo root (has the package)
@@ -24,7 +28,6 @@ from pyrova.core.design import Design
 from pyrova.objectives.thermal import peak_temperature
 from pyrova.optimizer.placer import DiffPlacer
 
-# Parameters
 N_WORKLOADS = 6        # number of workloads xi^j (= number of placements p^j)
 N_ITER      = 40       # Adam iterations per single-workload optimisation
 LR          = 1e-2
@@ -89,7 +92,6 @@ def main() -> None:
     for i in range(N_WORKLOADS):
         print(f"  p^{i}: {worst_regret[i]:.2f} K")
 
-    # Plots
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
 
     ax = axes[0]
@@ -118,7 +120,6 @@ def main() -> None:
     plt.close(fig)
     print(f"\nPlot -> {png}")
 
-    # Numeric summary
     txt = RESULTS / "exp001_sensitivity.txt"
     with open(txt, "w") as f:
         f.write("exp001 - workload sensitivity (cross-performance)\n")

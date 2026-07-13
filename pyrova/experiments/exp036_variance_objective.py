@@ -1,32 +1,16 @@
-"""The data-efficiency of the i.i.d. tail dimension: which training objective
-captures it at what sample size?
+"""Objective x sample-size curve for the i.i.d. tail dimension: per (objective,
+N_ORACLE), D* = trueCVaR(mean-oracle) - trueCVaR(arm-oracle), scored at
+alpha=0.9 on a 4000-scenario holdout. Arms: cvar (empirical CVaR at
+alpha=0.9), blend ((1-g)*mean + g*CVaR, g=0.5), and cvar_wide (CVaR trained at
+alpha=0.6, scored at 0.9). Matched budgets, train@18 with raster jitter,
+independent 64^2 evaluation, common random numbers across arms within a pair,
+Holm across the three objectives within an N cell.
 
-A large-N oracle ladder showed the i.i.d. separable tail dimension is real and
-positive (~+0.09 K) but only surfaces once N_ORACLE is large; a local probe
-showed plain empirical-CVaR training overfits the sample tail (variance, not
-bias — jackknife debiasing made it worse), while variance-reduced objectives
-recover the advantage at far smaller N. This measures that properly.
-
-Estimand per (objective, N_ORACLE): D* = trueCVaR(mean-oracle) -
-trueCVaR(arm-oracle), evaluated at the TRUE tail (alpha=0.9) on a large holdout.
-D* > 0 means the objective beats mean-training on the true tail.
-
-Objectives:
-  cvar       - plain empirical CVaR at the target alpha=0.9 (the overfitter)
-  blend      - (1-g)*mean + g*CVaR, g=0.5 (shrinkage toward the stable mean)
-  cvar_wide  - CVaR trained at a WIDER tail alpha=0.6, scored at 0.9 (more of
-               the sample averaged -> lower-variance objective)
-
-Traps controlled: matched budget (all arms N_ITER); train@18 + raster jitter,
-eval on an independent 64^2 grid; common random numbers across arms within a
-pair (shared jitter + restart seeds) so the paired D* cancels shared optimizer
-noise. Holm across the three objectives within an N cell.
-
-Runs ONE N_ORACLE per invocation (PYROVA_NORACLE / SLURM array), so the
-expensive large-N cell parallelizes. Aggregate the per-N files into the
+Runs ONE N_ORACLE per invocation (PYROVA_NORACLE or the SLURM array index;
+PYROVA_PAIRS overrides the pair count); aggregate the per-N files into the
 objective x N curve afterwards.
 
-Set PYROVA_SMOKE=1 for a tiny local execution check.
+Set PYROVA_SMOKE=1 for a tiny execution check.
 """
 
 from __future__ import annotations

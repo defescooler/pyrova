@@ -1,34 +1,9 @@
-"""exp016: sign-stability of the two confirmed positives across the untested knobs.
-
-Every verdict in the suite was produced at one grid resolution (18x18), one
-Adam learning rate (2e-2), and (for BOOM) one synthesised geometry (ncol=6
-squares). Three sweeps check that the surviving positive results are not
-artifacts of those choices:
-
-  G. GRID: exp005's strongest Holm survivor (structured, N_TRAIN=128,
-     alpha=0.95) re-run at grids {18, 24, 30}. Discretisation is the cheapest
-     remaining way the structured positive could be an artifact (cell size ~
-     small-block size at 18x18).
-  L. LEARNING RATE: exp015-A's blend-vs-mean comparison (BOOM, 120 iters,
-     gamma in {0, 0.75}) at lr {5e-3, 2e-2}. Diagnoses the open "domination"
-     mechanism: if mean-opt stops losing on its own metric at the smaller lr,
-     the blend win at lr=2e-2 is an Adam-oscillation artifact of the smooth
-     objective; if domination persists across lr, the blend objective's
-     advantage is real optimisation behaviour.
-  Y. GEOMETRY: the same BOOM comparison at synthesised layouts ncol {4, 8}
-     (6 is covered by sweep L at lr=2e-2). The blend win must not be a
-     property of one gridded-squares layout.
-
-PRE-REGISTERED READINGS:
-  G: STABLE if dCVaR (mean-opt minus cvar-opt) > 0 at every grid; the claim
-     is grid-robust. Any sign flip -> the structured positive is
-     discretisation-contingent and must be requalified.
-  L: domination (dMean CI>0 for gamma=0.75) at BOTH lr -> real objective
-     behaviour, mechanism still open; domination only at lr=2e-2 ->
-     lr-artifact, requalify exp015-A accordingly.
-  Y: blend dCVaR>0 (point estimate) in at least 2 of 3 geometries and CI>0 in
-     at least 1 -> geometry-robust; all-ns or sign flips -> geometry-
-     contingent, say so in CLAUDE.md.
+"""Three sign-stability sweeps. G: structured-family mean-opt vs cvar-opt
+(N_TRAIN=128, alpha=0.95, 30 iterations, 5 seeds, 1500-scenario holdout) at
+grids {18, 24, 30}, paired t-CIs. L: BOOM blend gamma=0.75 vs mean (120
+iterations, 20 repeated 60/20 splits, Nadeau-Bengio CIs) at lr {5e-3, 2e-2}.
+Y: the same BOOM comparison at synthesised layouts ncol {4, 8} (ncol=6
+covered by sweep L at lr=2e-2).
 """
 
 from __future__ import annotations
@@ -50,17 +25,17 @@ from pyrova.workloads.boom_traces import BoomWorkload, resolve_paths
 
 FLP = PKG / "inputs/floorplans/ev6.flp"
 CONFIG = PKG / "inputs/configs/thermal.config"
-ALPHA_G = 0.95           # exp005 survivor cell
+ALPHA_G = 0.95
 N_TRAIN_G = 128
 GRIDS = [18, 24, 30]
 N_SEEDS_G = 5
 N_TEST = 1500
-N_ITER_G = 30            # exp005's budget, for comparability with the original cell
+N_ITER_G = 30
 
 ALPHA_B = 0.90
-N_ITER_B = 120           # exp015's matched budget
+N_ITER_B = 120
 LRS = [5e-3, 2e-2]
-NCOLS = [4, 8]           # 6 == exp015 baseline, covered by sweep L at lr=2e-2
+NCOLS = [4, 8]           # ncol=6 covered by sweep L at lr=2e-2
 N_SPLITS = 20
 N_TRAIN_B = 60
 TARGET_PEAK = 40.0
@@ -78,7 +53,7 @@ def oos(pl, scen, alpha):
 
 
 def boom_arm(cfg, ncol: int, lr: float, emit, label: str):
-    """Blend gamma=0.75 vs mean-opt on BOOM at the exp015 protocol, with
+    """Blend gamma=0.75 vs mean-opt on BOOM over repeated 60/20 splits, with
     configurable synthesised geometry (ncol) and learning rate."""
     csvp, rptp = resolve_paths()
     if not csvp:
@@ -98,7 +73,7 @@ def boom_arm(cfg, ncol: int, lr: float, emit, label: str):
 
     dC, dM = [], []
     for seed in range(N_SPLITS):
-        perm = np.random.default_rng(40_000 + seed).permutation(n)   # exp012/exp015 splits
+        perm = np.random.default_rng(40_000 + seed).permutation(n)
         tr = [scen[i] for i in perm[:N_TRAIN_B]]
         te = [scen[i] for i in perm[N_TRAIN_B:]]
         res = {}
@@ -127,7 +102,7 @@ def main():
     def emit(s=""):
         print(s, flush=True); fh.write(s + "\n"); fh.flush()
 
-    # G: grid-resolution stability of the exp005 survivor cell
+    # G: grid-resolution stability of the structured comparison
     units = parse_flp(str(FLP))
     chip_w, chip_h = chip_box(units)
     emit(f"exp016-G: exp005 survivor (structured, N={N_TRAIN_G}, alpha={ALPHA_G}) "
@@ -156,7 +131,7 @@ def main():
         emit(f"  grid {nr}x{nr}: dCVaR={gc:+.3f}{fc} [{lo:+.3f},{hi:+.3f}]  dMean={gm:+.3f}")
         g_rows.append(gc)
     g_stable = all(v > 0 for v in g_rows)
-    emit(f"  G VERDICT: {'STABLE — dCVaR>0 at every grid; the structured positive is grid-robust.' if g_stable else 'SIGN FLIP across grids — the structured positive is discretisation-contingent; requalify exp005 in CLAUDE.md.'}")
+    emit(f"  G VERDICT: {'STABLE — dCVaR>0 at every grid; the structured positive is grid-robust.' if g_stable else 'SIGN FLIP across grids — the structured positive is discretisation-contingent; requalify the exp005 claim.'}")
 
     # L: learning-rate dependence of the blend domination (BOOM)
     emit(f"\nexp016-L: BOOM blend gamma=0.75 vs mean, {N_ITER_B} iter, lr sweep {LRS} "
@@ -190,8 +165,7 @@ def main():
              f"CI>0 in {sig}.")
     else:
         emit(f"  Y VERDICT: geometry-contingent — dCVaR>0 in only {pos}/{len(y_rows)} "
-             f"layouts (CI>0 in {sig}); scope the blend claim to the tested geometry "
-             f"in CLAUDE.md.")
+             f"layouts (CI>0 in {sig}); scope the blend claim to the tested geometry.")
     fh.close()
     print(f"\nWrote {out.relative_to(ROOT)}")
 

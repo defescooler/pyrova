@@ -1,30 +1,13 @@
-"""exp031 (gate-0 items 1+5, ledger P11): do the E1 oracle headlines survive
-LEGALIZED evaluation?
+"""Raw-vs-legalized oracle re-evaluation on two testbeds (hetero-SoC, Kraken):
+reproduces recorded oracle placements exactly from pinned seeds (same fit
+code, jitter and restart streams), then scores every placement at 64^2 both
+raw and after overlap-only legalization (optimizer/legalize.py, target <0.1%
+residual), reporting D* = trueCVaR(mean-arm) - trueCVaR(cvar-arm) under both;
+the raw reproduction doubles as a fidelity check, and any placement that
+fails to legalize below 0.1% excludes its pair.
 
-Trap 4 (claim 17) found 0.5-2.2% residual illegal overlap on optimized
-placements. exp023's E2 cells survive legalized evaluation (+0.048* vs raw
-+0.051); this experiment applies the same treatment at ORACLE scale to the
-two E1 headlines:
-
-  hetero : exp023 E1 (D* = +0.068* [+0.043,+0.094] raw) — claim 16.
-  kraken : exp025 E1 (raw numbers landing in parallel) — pending claim P7.
-
-Method: reproduce each E1's placements EXACTLY from the pinned seeds (same
-fit code, same jitter/restart streams), evaluate each placement at 64^2 both
-RAW and LEGALIZED (optimizer/legalize.py, overlap-only projection, target
-<0.1%). The raw reproduction doubles as a fidelity check against the recorded
-numbers (should match to eval noise ~0).
-
-PRE-REGISTERED READING per testbed:
-  - SURVIVES if legalized D* CI > 0: the headline is not overlap leakage;
-    claim 16 (resp. P7) loses its legality qualifier.
-  - OVERLAP ARTIFACT if legalized D* CI <= 0 while raw D* CI > 0: trap 4
-    claims another positive; the claim is re-scoped immediately.
-  - Any placement that fails to legalize below 0.1% is reported and its pair
-    EXCLUDED (no silent inclusion).
-
-Set PYROVA_SMOKE=1 for a tiny local execution check (not a result).
-Set PYROVA_TESTBED=hetero|kraken|both (default both) to split PACE jobs.
+Set PYROVA_SMOKE=1 for a tiny execution check.
+Set PYROVA_TESTBED=hetero|kraken|both (default both) to split jobs.
 """
 
 from __future__ import annotations
@@ -160,7 +143,7 @@ def main():
          f"testbed={testbed}. "
          + ("[SMOKE - not a result]" if SMOKE else "[full run]"))
 
-    # hetero-SoC (exp023 seeds: jitter base 910_000)
+    # hetero-SoC (pinned jitter base 910_000)
     if testbed in ("hetero", "both"):
         h_units = soc_units()
         run_testbed("hetero-SoC (exp023 E1)", h_units,
@@ -171,7 +154,7 @@ def main():
         print(f"\nWrote {out.relative_to(ROOT)}")
         return
 
-    # Kraken (exp025 seeds: jitter base 930_000; scale calibrated as exp025)
+    # Kraken (pinned jitter base 930_000; scale calibrated as in the recorded run)
     k_units = kraken_units()
     kcw, kch = chip_box(k_units)
     ksolver = GridFDSolver(cfg, k_units, kcw, kch, TRAIN_GRID, TRAIN_GRID)

@@ -1,38 +1,10 @@
-"""Mechanism test: does a TRUE tail dimension exist, and is it learnable at small N?
-
-De-confounded successor (review) to the old one-sided
-    gap = OOS CVaR(mean-opt) - OOS CVaR(CVaR-opt),
-which sums two effects: (A) CVaR-opt is scored on the very functional it minimised,
-and (B) at small N it overfits the noisy empirical tail — the sign of one number
-cannot separate a true, exploited tail dimension from overfitting. Three reported
-quantities remove both confounds:
-
-  1. EXISTENCE (overfitting-free). Train N_OR_SEEDS independent mean-oracle /
-     CVaR-oracle PAIRS at a LARGE N_ORACLE so neither overfits, evaluate on a
-     HUGE holdout (OOS ~= true). Per pair
-       D*_k = trueCVaR(mean-oracle_k) - trueCVaR(cvar-oracle_k)
-     and D* is reported with a paired 95% t-CI across oracle seeds — the
-     nonconvex placer's run-to-run noise a single oracle pair cannot provide.
-     D* CI>0 means a true, separable tail dimension exists; CI spanning 0 means
-     minimising the mean already minimises the tail.
-
-  2. SIDE-BY-SIDE (mean, CVaR) at small N. For mean-opt and CVaR-opt trained at
-     N_SMALL, report BOTH out-of-sample mean and CVaR. Lower CVaR with higher
-     mean is a genuine mean-for-tail trade; higher on both is dominated (pure
-     overfitting).
-
-  3. REGRET to the CVaR-oracle. regret(p) = OOS CVaR(p) - OOS CVaR(cvar-oracle),
-     the distance to the best achievable tail. Learnability = whether small-N
-     CVaR-opt's regret is below small-N mean-opt's; if not, the tail dimension
-     exists (D*>0) but is not learnable at this N.
-
-Part B (descriptive): correlation of mean-dT vs CVaR-dT across placements near the
-optimum (Pearson < 1 => a separate, if weak, risk dimension exists).
-
-All holdouts are large enough that OOS ~= true, so the across-seed CI reflects
-training (small-N estimator) variance, not scoring noise. i.i.d. synthetic workload
-on ev6 + floorplan2; structured-workload analogue: exp005; DRO penalty vs pure
-CVaR: exp007.
+"""Oracle existence and small-N learnability of a tail dimension on the i.i.d.
+synthetic workload (ev6 + floorplan2): (1) D* = trueCVaR(mean-oracle) -
+trueCVaR(cvar-oracle) over 5 independent oracle pairs trained at N=1500, with a
+paired 95% t-CI; (2) small-N (N=32) mean-opt vs CVaR-opt, OOS (mean, CVaR) side
+by side over 8 seeds; (3) regret to the best cvar-oracle — all scored on one
+4000-scenario holdout (OOS ~= true). Part B: descriptive Pearson/Spearman
+correlation of mean-dT vs CVaR-dT across perturbed placements.
 """
 
 from __future__ import annotations
@@ -151,7 +123,7 @@ def run(path: Path, cfg, emit) -> dict:
         last = p_mean
 
     Mm, Cm, Mc, Cc = map(np.asarray, (Mm, Cm, Mc, Cc))
-    dmean, _, dm_lo, dm_hi = ci95_t(Mm - Mc)      # >0 => CVaR-opt has higher mean
+    dmean, _, dm_lo, dm_hi = ci95_t(Mm - Mc)      # <0 => CVaR-opt pays mean (higher mean)
     dcvar, _, dc_lo, dc_hi = ci95_t(Cm - Cc)      # >0 => CVaR-opt has lower CVaR
     # Regret reference: the best cvar-oracle placement across pairs (a concrete
     # placement scored on the same holdout). The CI covers small-N training

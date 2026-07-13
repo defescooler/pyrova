@@ -1,22 +1,15 @@
-"""Attribute the persistent i.i.d. D*<0: is it empirical-CVaR estimator bias or
-incomplete optimization?
+"""Oracle-gap ladder in training-sample size: D* = trueCVaR(mean-oracle) -
+trueCVaR(cvar-oracle) per N_ORACLE in {1500, 3000, 6000} under i.i.d. power,
+budget fixed at 240 iterations, matched train/eval on a 24^2 grid (no raster
+jitter), 5 pairs per cell against an 8000-scenario holdout.
 
-Population theory gives true D* >= 0, yet the powered budget ladder found D*
-significantly negative even at 240 iterations, with budget closing only ~37%
-(non-significant). Two artifacts remain: (i) the cvar arm minimizes EMPIRICAL
-CVaR on N_ORACLE draws, an optimistically-biased objective whose bias shrinks
-with N_ORACLE and is ~budget-invariant; (ii) optimization not fully converged
-even at 240 iters. The budget ladder fixed N and varied iters. This fixes iters
-(high) and varies N_ORACLE: if D* rises toward 0 as N_ORACLE grows, the residual
-negative is estimator bias; if it stays put, it is not.
+Runs ONE N_ORACLE per invocation: set PYROVA_NORACLE or use the SLURM array
+index; PYROVA_PAIRS / PYROVA_PAIR_OFFSET shard independent pairs across array
+tasks; PYROVA_FLP switches the floorplan (default ev6); PYROVA_BUDGET
+overrides the iteration budget. Each task writes its own result file;
+aggregate the cells afterwards.
 
-Runs ONE N_ORACLE per invocation (set PYROVA_NORACLE, or use the SLURM array
-index to pick from the grid), so the expensive large-N cells parallelize across
-array tasks. Each task appends its cell to its own result file; aggregate after.
-
-i.i.d. workload on ev6, grid 24^2, budget fixed at 240, matched to the ladder.
-
-Set PYROVA_SMOKE=1 for a tiny local execution check.
+Set PYROVA_SMOKE=1 for a tiny execution check.
 """
 
 from __future__ import annotations
@@ -79,7 +72,7 @@ def main():
     test = scen_set(units, tot, np.random.default_rng(99), N_TEST)
 
     tag = f"{n_oracle}" if PAIR_OFFSET == 0 else f"{n_oracle}_off{PAIR_OFFSET}"
-    if FLP.stem != "ev6":                      # keep historical ev6 filenames stable
+    if FLP.stem != "ev6":                      # default ev6 filenames stay unprefixed
         tag = f"{FLP.stem}_{tag}"
     out = PKG / f"results/exp034_noracle_{tag}.txt"
     fh = open(out, "w")

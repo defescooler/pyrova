@@ -1,27 +1,14 @@
-"""Does the large-N i.i.d. reversal survive trap controls? The decisive check.
-
-The N_ORACLE ladder found D*(N=6000) = +0.076 [+0.043,+0.109] — but under the
-ORIGINAL protocol: matched 24^2 train/eval grid, no rasterization jitter,
-single-start. Those are the exact conditions under which this project
-previously manufactured (and later withdrew) three other positives: tail
-objectives exploit the training discretization harder than mean objectives, so
-a matched-grid D* is inflated by an unknown amount. The trap-controlled
-sibling study (18+jitter -> 64^2 eval) shows no significant positive at any
-N <= 4000, with grid, budget and N all confounded between the two.
-
-This experiment isolates the grid control at the ladder's strongest cell:
-N_ORACLE=6000, budget=240 (both matched to the ladder), i.i.d. ev6, but
-trained with raster jitter and evaluated on an independent 64^2 grid.
-
-  D* > 0 (CI)  -> the reversal is real: a separable i.i.d. tail dimension
-                  exists and survives discretization transfer.
-  D* <= 0      -> the +0.076 was the fourth matched-grid ghost; the honest
-                  i.i.d. verdict reverts to "no demonstrated tail dimension".
+"""Grid-transfer check of the large-N i.i.d. oracle gap: D* = trueCVaR(mean-
+oracle) - trueCVaR(cvar-oracle) on ev6 i.i.d. power at N_ORACLE=6000 and a
+240-iteration budget, single-start arms trained at 24^2 WITH raster jitter and
+evaluated on an independent 64^2 grid against an 8000-scenario holdout; common
+random numbers — each pair's jitter seed is shared across the mean/cvar arms.
 
 One array task = 3 pairs (offset via PYROVA_PAIR_OFFSET); run 3-4 tasks for
-9-12 pairs. CRN: each pair's jitter seed is shared across the mean/cvar arms.
+9-12 pairs. PYROVA_NORACLE, PYROVA_BUDGET, PYROVA_PAIRS, and PYROVA_FLP
+override the defaults.
 
-Set PYROVA_SMOKE=1 for a tiny local execution check.
+Set PYROVA_SMOKE=1 for a tiny execution check.
 """
 
 from __future__ import annotations
@@ -47,7 +34,7 @@ SMOKE = os.environ.get("PYROVA_SMOKE") == "1"
 CONFIG = PKG / "inputs/configs/thermal.config"
 FLP = Path(os.environ.get("PYROVA_FLP", PKG / "inputs/floorplans/ev6.flp"))
 ALPHA = 0.9
-TRAIN_GRID = 24               # the ladder's grid — only the CONTROLS change
+TRAIN_GRID = 24               # jitter + independent 64^2 eval are the transfer controls
 EVAL_GRID = 32 if SMOKE else 64
 JITTER = 1.0
 N_ITER = int(os.environ.get("PYROVA_BUDGET", 15 if SMOKE else 240))

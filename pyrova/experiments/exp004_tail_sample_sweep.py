@@ -1,23 +1,8 @@
-"""Learnability sweep (N_train x alpha): does targeting the tail help TRUE tail risk?
-
-Sweeps the small-N -> large-N curve for mean-opt vs CVaR-opt on the i.i.d. synthetic
-workload. The scientific story is the SHAPE of the curve in N_train (does a CVaR
-benefit appear, persist, or collapse), not any single cell.
-
-De-confounded metric (review): the old single
-    gap = OOS CVaR(mean-opt) - OOS CVaR(CVaR-opt)
-conflates (A) scoring CVaR-opt on the very functional it minimised with (B) CVaR-opt
-overfitting the noisy empirical tail. Each cell instead reports TWO deltas on a
-large holdout (OOS ~= true):
-
-    dCVaR = OOS CVaR(mean-opt) - OOS CVaR(CVaR-opt)   (>0 => CVaR-opt has lower tail)
-    dMean = OOS mean(mean-opt) - OOS mean(CVaR-opt)   (<0 => CVaR-opt pays mean)
-
-Read together: dCVaR>0 with dMean<0 is a genuine mean-for-tail trade; dCVaR<=0 with
-dMean<=0 is CVaR-opt dominated (overfitting on both); dCVaR<0 means CVaR-opt is
-worse even on its own metric. Expectation on this i.i.d. workload: overfitting —
-CVaR-opt reaches parity only as N grows, never a benefit. Structured analogue:
-exp005; overfitting-free oracle existence test: exp003.
+"""N_train x alpha learnability sweep, mean-opt vs CVaR-opt on the i.i.d.
+synthetic workload (ev6 + floorplan2): per cell, paired dCVaR and dMean
+(= mean-opt minus CVaR-opt, both) on a 1500-scenario holdout with 95% t-CIs
+over 5 seeds (alpha enters the cell seed), Holm correction across all cells
+for the sweep verdict.
 """
 
 from __future__ import annotations

@@ -1,34 +1,10 @@
-"""exp021: are the surviving BOOM conclusions resolution artifacts?
-
-The BOOM die is 1.8 mm; at the suite's 18x18 grid several blocks are smaller
-than one cell, so every BOOM result lives in an under-resolved regime. After
-exp019 the surviving BOOM conclusions are (a) "objectives are statistically
-indistinguishable once optimisation effort is equalised" and (b) the
-efficiency observation "single-start blend matched the 10x-effort mean
-baseline". Both were measured with training AND evaluation at 18x18. This
-experiment re-evaluates them under fine-grid evaluation and finer-grid
-training, and (locally, when the reference binary is present) closes P5 by
-attributing exp018-B's 15 K reference MAE.
-
-Design: 10 FRESH splits (seed base 95_000), 60/20, alpha=0.9.
-  Arms trained@18: mean-std (120 it), mean-strong (best-of-3 x 240 it,
-      training-mean selection), blend g=0.75 (120 it).
-  Arms trained@36: mean-std, blend (does training resolution change the
-      picture where blocks ~ cell size?).
-  ALL placements evaluated at 18^2 and 64^2 (our solver).
-PRE-REGISTERED READINGS:
-  R1 (equalised-effort null, claim's resolution stability): SURVIVES if
-      blend@18 vs mean-strong@18 stays ns under eval@64 with a point estimate
-      within +-1 K of its eval@18 value; otherwise the exp019 conclusion is
-      itself resolution-contingent (report direction).
-  R2 (efficiency observation): SURVIVES if blend@18 >= mean-strong@18 - 1 K
-      on eval@64 CVaR (point estimate); else demote it.
-  R3 (protocol adequacy): if train@36 arms beat their train@18 counterparts
-      on eval@64 CVaR (paired CI > 0), the 18x18 BOOM protocol under-resolves
-      and future BOOM work must train at >= 36^2.
-  P5 (local only): our-solver@32 vs reference@32 on one split's placements,
-      20 programs; solvers AGREE if MAE < 50 mK — exp018-B's 15 K MAE was
-      then purely the 18-vs-32 resolution gap, not model disagreement.
+"""BOOM resolution check over 10 fresh 60/20 splits (seed base 95_000),
+alpha=0.9. Arms trained@18: mean-std (120 it), mean-strong (best-of-3 x 240
+it, training-mean selection), blend gamma=0.75 (120 it); arms trained@36:
+mean-std, blend. ALL placements evaluated at both 18^2 and 64^2 with our
+solver; Nadeau-Bengio CIs. When the reference binary is present, also
+compares our-solver@32 vs reference@32 on one split's placements (20
+programs).
 """
 
 from __future__ import annotations

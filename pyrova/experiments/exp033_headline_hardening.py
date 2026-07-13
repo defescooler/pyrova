@@ -1,37 +1,14 @@
-"""Definitive hardening of the favorable-regime positive: robustness across the
-reviewer knobs AND a symmetric, well-powered oracle estimate.
+"""Oracle gap on the hetero-SoC with evaluation-axis robustness: D* =
+trueCVaR(mean-oracle) - trueCVaR(cvar-oracle) over 20 oracle pairs, both arms
+best-of-3 restarts with common random numbers per pair (shared jitter and
+restart draws — only the objective differs), train@18 with raster jitter,
+legalized evaluation (any cell with residual overlap > 0.1% is void),
+re-scored across alpha in {0.90, 0.95}, grid in {64, 96, 128}, and metric in
+{peak (single hottest node), hot1 (mean of the hottest 1%)}, with dMean
+alongside; the grid and metric axes are evaluation-only. Fail-closed gate:
+the hotspot must move across >= 3 blocks over the modes.
 
-Supersedes the two partial attempts: one varied tail level / eval grid / hotspot
-metric but kept 5 oracle pairs and gave restarts to the mean arm only (the
-asymmetry that biases D* downward for a positive claim, so it was conservative
-but underpowered); the other fixed power and symmetry but omitted the metric and
-grid axes. This merges both.
-
-Estimate: oracle D* = trueCVaR(mean-oracle) - trueCVaR(cvar-oracle) on the
-mechanism-favorable hetero-SoC, evaluated on LEGALIZED placements (overlap
-removed before scoring, void any cell with residual overlap > 0.1%).
-
-Fixes: 20 oracle pairs; BOTH arms best-of-R restarts with common random numbers
-per pair (shared jitter and restart draws — only the objective differs, so the
-paired difference cancels shared optimizer noise). Re-scored across:
-  alpha  in {0.90, 0.95}
-  grid   in {64, 96, 128}                 (is 64^2 converged?)
-  metric in {peak, hot1}                  (single hottest node vs mean of the
-                                           hottest 1% — a less spiky hotspot)
-
-Training varies only the objective and (for cvar) alpha; the grid and metric are
-evaluation-only, so the test is whether a placement optimized for the spiky
-single-node peak keeps its tail advantage under smoother / finer / stricter
-scoring.
-
-GATE (enforced): hotspot must move across >= 3 blocks over the modes.
-
-READING (a robustness confirmation, not a fresh significance hunt): the positive
-is CONFIRMED & ROBUST if every (alpha, grid, metric) cell has D* > 0 with no CI
-strictly below 0, the symmetric 20-pair CI is above 0, and dMean <= 0 (a
-mean-for-tail trade, not domination). FRAGILE if any cell flips sign with CI<0.
-
-Set PYROVA_SMOKE=1 for a tiny local execution check.
+Set PYROVA_SMOKE=1 for a tiny execution check.
 """
 
 from __future__ import annotations

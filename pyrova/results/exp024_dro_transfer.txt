@@ -1,6 +1,0 @@
-exp024 (P6): trap-free re-measurement of the corrected-DRO advantage. Hand-built family, N in [64, 128], 8 seeds, alpha=0.9; train@18+jitter, 120 it, eps by 2-fold CV [0.1, 0.25, 0.5] (sigma-units, fine-grid scored); eval@64, N_TEST=500.
-vs_cvar0 = CVaR(pure-CVaR) - CVaR(dro_exact) at eval@64; Holm over the 2 cells.
-  N=64: vs_cvar0=-0.097  [-0.352,+0.158] p=0.3983  eps(CV)=[0.5, 0.5, 0.1, 0.1, 0.1, 0.5, 0.5, 0.1]
-  N=128: vs_cvar0=-0.234  [-0.608,+0.139] p=0.1815  eps(CV)=[0.5, 0.25, 0.1, 0.1, 0.5, 0.5, 0.1, 0.1]
-
-PRE-REGISTERED VERDICT: ARTIFACT — no Holm-surviving positive under jittered training and fine-grid evaluation; claim 7's hand-built positive joins claims 6/11 as a matched-grid artifact, and DRO closes with no surviving positive.

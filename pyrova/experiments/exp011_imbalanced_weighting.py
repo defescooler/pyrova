@@ -1,92 +1,14 @@
-"""exp011: does IMBALANCED workload weighting rescue the exp009 null?
-
-Every prior experiment weights the N scenarios uniformly (1/N) in the empirical
-CVaR. Real deployments do not: usage telemetry is heavily concentrated. This
-experiment reruns exp009's mean-opt vs CVaR-opt comparison on the same 80 BOOM
-benchmarks and the same synthesised geometry, changing ONLY the scenario
-weighting, with weights sourced from public deployment data.
-
-PRE-REGISTERED PREDICTION (verbatim from the experiment brief):
-
-  Using the BOOM workload set from exp009 (80 real RISC-V benchmarks with
-  per-functional-unit McPAT power) and real component areas, under three
-  independently-sourced imbalanced weighting schemes documented below, we
-  predict:
-
-    (a) The imbalanced-weighted anti-correlated cluster structure survives:
-        weighted-corr(FP, INT) < -0.1 in at least 2 of 3 weighting schemes.
-    (b) Under at least one weighting scheme with concentration ratio > 0.7
-        (Gini > 0.5 or similar), dCVaR > 0 with 95% CI strictly above zero.
-    (c) The i.i.d. control (uniform weighting) reproduces exp009's null
-        (dCVaR CI includes zero) — this validates that the pipeline works
-        correctly under the known-null condition.
-
-  Falsification: if all three weighting schemes yield dCVaR CI including zero,
-  the imbalanced-weighting mechanism does not rescue the empirical result on
-  this design, and we accept the null on real workloads with real deployment
-  weightings.
-
-WEIGHTING SCHEMES — sources (all category-level numbers verified against the
-primary PDFs; benchmark-level allocation is UNIFORM WITHIN CATEGORY by the
-pre-declared rule below — the sources say nothing about individual kernels):
-
-  A "borg2019-dc": Tirmazi et al., "Borg: the Next Generation", EuroSys 2020,
-    DOI 10.1145/3342195.3387517. In-text (Sec. 4): best-effort batch ~= 20% of
-    cell capacity; production ~= 0.30 of capacity approx from Fig. 2b/3 of
-    ~0.60 total usage -> usage shares prod 0.50 / batch 0.33 / mid 0.13 /
-    free 0.04. Tier->category: prod -> {mem_stream, data_proc, general};
-    batch -> {media_dsp, fp_sci}; mid -> control; free -> trivial.
-    NOTE: fails the concentration gate by construction (top10=0.25) — reported
-    as a sourced low-concentration arm; prediction (b) is tested on B/C.
-
-  B "mobile-falaki": Falaki et al., "Diversity in Smartphone Usage", MobiSys
-    2010, DOI 10.1145/1814433.1814453, Fig. 13 Dataset2 (N=222) shares of
-    ACTIVE interaction time: communication 49%, browsing 12%, games 10%,
-    media 9%, productivity 2%, maps 2%, system 1%, other 15%. Idle fraction
-    1 - 59.23/1440 = 0.9589 from Boehmer et al., MobileHCI 2011, DOI
-    10.1145/2037373.2037383 (59.23 min/day mean active use). Activity->category:
-    comm->control, browsing+productivity->data_proc, media->media_dsp,
-    games->fp_sci, maps->mem_stream, system->general, other->uniform over the
-    six app categories, idle->trivial.
-
-  C "mobile-carroll": Carroll & Heiser, "An Analysis of Power Consumption in a
-    Smartphone", USENIX ATC 2010, Table 12 "Regular" daily pattern: SMS 30 +
-    audio 60 + call 30 + web 15 + email 15 min/day, remainder suspend (89.6%).
-    Activity->category: SMS+call->control, audio->media_dsp, web+email->
-    data_proc, suspend->trivial.
-
-  (The brief's third suggestion — SPEC frequency weightings — was DROPPED: no
-  published survey gives cycle-share frequencies over SPEC-like patterns;
-  the SPEC subsetting literature gives redundancy clusters, not deployment
-  frequencies. Per the brief's drop rule, C substitutes a second
-  independently-sourced mobile scheme.)
-
-  "uniform-control": 1/80 each, exp009's setup exactly (same split RNG).
-
-PRE-DECLARED benchmark->category rule (mechanical, by name; fixed before any
-dCVaR was computed): see CATEGORY below. ISA unit tests (rv64*) -> verification,
-weight 0 in all deployment schemes (deployed chips do not run ISA loops).
-hello_world* -> trivial, used as the idle proxies (the brief forbids adding new
-workload models). POST-RUN FINDING (kept, not tuned away, per the brief's
-no-post-hoc-adjustment rule): the proxies turn out to be thermally INVALID as
-idle — bare-metal hello_world runs the full boot/print path at 6.07/6.29 W vs
-5.11 W median (peak-dT ranks 30 and 26 of 80). B and C therefore represent
-"weight concentrated on two above-median-power scenarios", NOT idle-dominated
-deployments. This is reported in the diagnostics and bounds the conclusion.
-
-DESIGN NOTES (declared before running):
-  - Disjoint 40/40 train/test, 10 splits, 95% t-CIs, exactly as exp009.
-  - Weighted arms stratify the two `trivial` benchmarks (one per half) so the
-    dominant idle atom is represented on both sides; weights renormalised
-    within each half. uniform-control uses exp009's plain permutation.
-  - Mechanistic prior, recorded up front: exp009 found the hotspot stable in
-    76/80 programs and the anti-correlation in the thermally-light FP cluster
-    (max FP power share across all 80 benchmarks = 16.6%). Reweighting changes
-    which scenarios matter, not the geometry, so the null may survive; that is
-    prediction (b)'s falsification branch, and it is an acceptable answer.
-  - Under B the active mass (0.041) < tail mass (0.1), so the weighted tail
-    includes part of the idle atom (dilution); under C the active mass (0.104)
-    fills the tail almost exactly. Reported in the tail diagnostic.
+"""Deployment-weighted placement test on the BOOM pool (80 programs, config 0,
+McPAT-area synthesised layout; needs BOOM_DATA): mean-opt vs CVaR-opt with
+per-scenario weights under four schemes — uniform control plus three
+category-level weightings sourced from published telemetry (citations at
+scheme_weights below), allocated uniformly within category by the fixed
+name-based CATEGORY map (rv64* ISA tests weight 0; hello_world* are the idle
+proxies). 10 disjoint 40/40 splits (weighted arms stratify one trivial
+benchmark per half, weights renormalised within each half), weighted OOS
+dCVaR/dMean (= mean-opt minus CVaR-opt) with Nadeau-Bengio-corrected CIs, plus
+per-scheme concentration (top10/Gini), weighted cluster correlations, an
+idle-proxy thermal-validity check, and a weighted-tail composition diagnostic.
 """
 
 from __future__ import annotations
@@ -107,7 +29,7 @@ from pyrova.evaluation.metrics import mean_cvar, ci95_nadeau_bengio
 from pyrova.workloads.boom_traces import BoomWorkload, resolve_paths
 
 CONFIG = PKG / "inputs/configs/thermal.config"
-CONFIG_ID = "0"          # exp009-matching
+CONFIG_ID = "0"
 ALPHA = 0.90
 NR = NC = 18
 N_ITER = 30
@@ -115,7 +37,7 @@ N_SPLITS = 10
 TRAIN_FRAC = 0.5
 TARGET_PEAK = 40.0
 
-# Pre-declared benchmark -> category map (mechanical, by name)
+# Benchmark -> category map (mechanical, by name)
 _CATS = {
     "media_dsp": ["adpcm_dec", "adpcm_enc", "h264_dec", "huff_dec", "jfdctint",
                   "fir2dim", "iir", "lms", "fmref", "edn", "compress", "crc", "ndes"],
@@ -144,7 +66,28 @@ def category_of(name: str) -> str:
     return CATEGORY.get(name, "general")
 
 
-# Weighting schemes (sourced category weights; see module docstring)
+# Weighting-scheme sources (category-level numbers verified against the primary
+# PDFs; benchmark-level allocation is uniform within category — the sources say
+# nothing about individual kernels):
+#   A "borg2019-dc": Tirmazi et al., "Borg: the Next Generation", EuroSys 2020,
+#     DOI 10.1145/3342195.3387517 (Sec. 4, Figs. 2b/3): usage shares prod 0.50 /
+#     batch 0.33 / mid 0.13 / free 0.04. Tier->category: prod -> {mem_stream,
+#     data_proc, general}; batch -> {media_dsp, fp_sci}; mid -> control;
+#     free -> trivial. Low-concentration by construction (top10=0.25).
+#   B "mobile-falaki": Falaki et al., "Diversity in Smartphone Usage", MobiSys
+#     2010, DOI 10.1145/1814433.1814453, Fig. 13 Dataset2 (N=222) shares of
+#     ACTIVE interaction time: communication 49%, browsing 12%, games 10%,
+#     media 9%, productivity 2%, maps 2%, system 1%, other 15%; idle fraction
+#     1 - 59.23/1440 = 0.9589 from Boehmer et al., MobileHCI 2011, DOI
+#     10.1145/2037373.2037383 (59.23 min/day mean active use). Activity->category:
+#     comm->control, browsing+productivity->data_proc, media->media_dsp,
+#     games->fp_sci, maps->mem_stream, system->general, other->uniform over the
+#     six app categories, idle->trivial.
+#   C "mobile-carroll": Carroll & Heiser, "An Analysis of Power Consumption in
+#     a Smartphone", USENIX ATC 2010, Table 12 "Regular" daily pattern: SMS 30 +
+#     audio 60 + call 30 + web 15 + email 15 min/day, remainder suspend (89.6%).
+#     Activity->category: SMS+call->control, audio->media_dsp, web+email->
+#     data_proc, suspend->trivial.
 def scheme_weights(names: list[str]) -> dict[str, np.ndarray]:
     cats = [category_of(n) for n in names]
 
@@ -197,8 +140,8 @@ def wcorr(a, b, w) -> float:
 
 def split_indices(n: int, cut: int, seed: int, trivial_idx: list[int],
                   stratify: bool):
-    """exp009's plain permutation; weighted arms additionally guarantee one
-    trivial (idle-proxy) benchmark per half (declared variance reduction)."""
+    """Plain permutation split; weighted arms additionally guarantee one
+    trivial (idle-proxy) benchmark per half (variance reduction)."""
     rng = np.random.default_rng(seed)
     perm = list(rng.permutation(n))
     tr, te = perm[:cut], perm[cut:]
@@ -319,7 +262,7 @@ def main():
             mc, cc = mean_cvar(pc._scenario_peaks(cxc, cyc, te), ALPHA, weights=w_te)
             dC.append(cm - cc); dM.append(mm - mc)
         # Repeated random splits of one fixed pool share data across splits:
-        # NB-corrected CI (SE = s*sqrt(1/J + n_te/n_tr), as exp009), not the naive t.
+        # NB-corrected CI (SE = s*sqrt(1/J + n_te/n_tr)), not the naive t.
         ratio = (n - cut) / cut
         gC, _, lo, hi = ci95_nadeau_bengio(dC, ratio)
         gM, _, mlo, mhi = ci95_nadeau_bengio(dM, ratio)
@@ -328,7 +271,7 @@ def main():
         emit(f"  {label:18s} dCVaR={gC:+.3f} K CI[{lo:+.3f},{hi:+.3f}] {flag:2s}  "
              f"dMean={gM:+.3f} K CI[{mlo:+.3f},{mhi:+.3f}]")
 
-    # Verdict vs pre-registration
+    # Verdict block
     emit("\n(3) VERDICT vs the pre-registered prediction:")
     n_anti = sum(1 for lb in ("A borg2019-dc", "B mobile-falaki", "C mobile-carroll")
                  if stats[lb]["cFI"] < -0.1)

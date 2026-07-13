@@ -1,0 +1,15 @@
+constrained payoff [ami33]: 33 blocks, 78 nets, die 10.4x10.4mm. N_ORACLE=2000, 5 pairs, 100 it, train@18+jitter -> guaranteed-legal eval@64 (alpha=0.9). lambda=[0.0, 1000.0, 3000.0, 10000.0]. [full run]
+  lambda=     0 cvar     : D*=-0.0023 [-0.0909,+0.0862] dMean=-0.0063  (legal HPWL 467.1mm)
+  lambda=     0 cvar_wide: D*=+0.0100 [-0.0255,+0.0455] dMean=+0.0299  (legal HPWL 467.1mm)
+  lambda=  1000 cvar     : D*=-0.0132 [-0.0708,+0.0444] dMean=+0.0072  (legal HPWL 408.3mm)
+  lambda=  1000 cvar_wide: D*=-0.0163 [-0.0580,+0.0253] dMean=-0.0016  (legal HPWL 408.3mm)
+  lambda=  3000 cvar     : D*=+0.0270 [-0.0467,+0.1008] dMean=+0.0179  (legal HPWL 397.2mm)
+  lambda=  3000 cvar_wide: D*=+0.0274 [-0.0190,+0.0738] dMean=+0.0187  (legal HPWL 397.2mm)
+  lambda= 10000 cvar     : D*=-0.0044 [-0.0559,+0.0472] dMean=-0.0032  (legal HPWL 388.7mm)
+  lambda= 10000 cvar_wide: D*=-0.0138 [-0.0800,+0.0524] dMean=-0.0054  (legal HPWL 388.7mm)
+
+G1 (constraint binds): 467.1->388.7mm (83.2%) -> PASS
+G2 (legality): max overlap 0.000%, 0 infeasible -> PASS
+
+===== PRE-REGISTERED VERDICT =====
+NULL [ami33]: no lambda>0 cell is Holm-sig>0 with dMean<=0 and D*(lambda)>=D*(0). Scarcity did not create a certified payoff here.

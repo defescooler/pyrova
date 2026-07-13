@@ -1,28 +1,9 @@
-"""exp015: re-test the two headline claims under CONVERGENCE-MATCHED optimisation.
-
-exp013 measured that the CVaR objective under-converges at the suite's standard
-30-iteration budget (own-metric deficit +0.25 K, 61% closed by 4x iterations,
-restarts irrelevant). Two results must therefore be re-tested with all arms at
-the HIGH budget (120 iterations), because both are exposed to the confound:
-
-  A. exp012's blend win on BOOM (gamma=0.75 dCVaR +0.90* [+0.07,+1.73]) ALSO
-     showed dMean +0.89* — mean-opt losing on its own metric, the signature of
-     under-convergence. If the blend's win was "mean-opt needed more
-     iterations", it disappears here; if it survives, it is a real,
-     budget-robust placement-quality win (and the pre-registered claim
-     upgrades from borderline to confirmed-at-matched-budgets).
-
-  B. exp003's D* < 0 (i.i.d., ev6) — the mathematically-impossible-for-exact-
-     optimisation negative. Re-measured with cvar at 4x iterations: prediction
-     (from exp013) is D* -> ~0 (no separable tail dimension, no longer
-     significantly negative). If D* stays significantly negative even at 4x,
-     the convergence story is incomplete.
-
-PRE-REGISTERED READINGS:
-  A: CONFIRMED-ROBUST if gamma=0.75 dCVaR NB-CI > 0 at 120 iters;
-     OPTIMIZER-ARTIFACT if the point estimate collapses toward 0;
-     either way report dMean alongside (domination vs trade).
-  B: RESOLVED if D*(120it) CI includes 0; RESIDUAL-ANOMALY if CI < 0 persists.
+"""Matched-budget comparison with every arm at 120 Adam iterations. Arm A:
+BOOM 80-program pool, blend gamma in {0, 0.75, 1.0} over 20 repeated 60/20
+splits (seed base 40_000), OOS dCVaR/dMean vs the mean baseline with
+Nadeau-Bengio CIs. Arm B: i.i.d. EV6 oracle gap D* = CVaR(mean-oracle) -
+CVaR(cvar-oracle) over 3 independent oracle pairs, N_ORACLE=1000 with a
+4000-scenario holdout, paired t-CI. alpha=0.9, train/eval grid 18^2.
 """
 
 from __future__ import annotations
@@ -45,7 +26,7 @@ FLP = PKG / "inputs/floorplans/ev6.flp"
 CONFIG = PKG / "inputs/configs/thermal.config"
 ALPHA = 0.90
 NR = NC = 18
-N_ITER_HI = 120          # exp013's 4x budget, applied to ALL arms
+N_ITER_HI = 120          # matched high budget, applied to ALL arms
 GAMMAS = [0.0, 0.75, 1.0]
 N_SPLITS = 20
 N_TRAIN = 60

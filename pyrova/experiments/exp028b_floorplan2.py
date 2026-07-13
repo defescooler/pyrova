@@ -1,6 +1,7 @@
-"""Recover the floorplan2 arm of the budget ladder: the combined run spent its
-whole walltime on ev6 and never reached the second bench. Same protocol, second
-design only.
+"""Floorplan2 arm of the i.i.d. oracle-gap budget ladder: runs the imported
+exp028_budget_ladder.run (estimand, budgets, pair count, and oracle sizes
+come from that module, so the arms cannot drift) on the floorplan2 bench
+only.
 """
 
 from __future__ import annotations
